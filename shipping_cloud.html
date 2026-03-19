@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Salvaro · Shipping Control</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --surface2: #181c24;
+    --border: #232836;
+    --border2: #2e3547;
+    --accent: #00e5ff;
+    --green: #00e676;
+    --yellow: #ffd740;
+    --orange: #ff9100;
+    --red: #ff1744;
+    --text: #e8eaf0;
+    --text2: #8891a8;
+    --text3: #505a72;
+    --font-mono: 'DM Mono', monospace;
+    --font-display: 'Syne', sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:var(--font-mono); min-height:100vh; overflow-x:hidden; }
+
+  /* HEADER */
+  header { background:var(--surface); border-bottom:1px solid var(--border); padding:0 32px; display:flex; align-items:center; justify-content:space-between; height:64px; position:sticky; top:0; z-index:100; }
+  .logo { font-family:var(--font-display); font-size:18px; font-weight:800; letter-spacing:-0.5px; display:flex; align-items:center; gap:10px; }
+  .logo-dot { width:8px; height:8px; background:var(--accent); border-radius:50%; box-shadow:0 0 12px var(--accent); animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(.8)} }
+  .header-right { display:flex; align-items:center; gap:16px; font-size:12px; color:var(--text2); }
+  .week-badge { background:var(--surface2); border:1px solid var(--border2); padding:4px 12px; border-radius:4px; font-size:11px; letter-spacing:1px; text-transform:uppercase; }
+  .sync-status { font-size:11px; display:flex; align-items:center; gap:6px; }
+  .sync-dot { width:6px; height:6px; border-radius:50%; background:var(--text3); transition:background .3s; }
+  .sync-dot.ok { background:var(--green); box-shadow:0 0 6px var(--green); }
+  .sync-dot.loading { background:var(--yellow); animation:pulse 1s infinite; }
+  .sync-dot.error { background:var(--red); }
+
+  /* CONTAINER */
+  .container { max-width:1600px; margin:0 auto; padding:24px 32px; }
+
+  /* KPI */
+  .kpi-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:28px; }
+  .kpi-card { background:var(--surface); border:1px solid var(--border); padding:18px 20px; border-radius:8px; position:relative; overflow:hidden; transition:border-color .2s; }
+  .kpi-card:hover { border-color:var(--border2); }
+  .kpi-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--accent-color,var(--accent)); }
+  .kpi-label { font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text3); margin-bottom:8px; }
+  .kpi-value { font-family:var(--font-display); font-size:32px; font-weight:800; line-height:1; }
+  .kpi-sub { font-size:11px; color:var(--text2); margin-top:4px; }
+
+  /* CONTROLS */
+  .controls { display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+  .client-tabs { display:flex; gap:4px; background:var(--surface); border:1px solid var(--border); padding:4px; border-radius:8px; flex-wrap:wrap; }
+  .client-tab { padding:6px 14px; border-radius:5px; font-size:11px; font-family:var(--font-mono); font-weight:500; letter-spacing:.5px; cursor:pointer; border:none; background:transparent; color:var(--text2); transition:all .15s; text-transform:uppercase; }
+  .client-tab:hover { color:var(--text); background:var(--border); }
+  .client-tab.active { background:var(--accent); color:#000; font-weight:700; }
+  .spacer { flex:1; }
+  .search-box { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:7px 14px; font-family:var(--font-mono); font-size:12px; color:var(--text); width:220px; outline:none; transition:border-color .2s; }
+  .search-box::placeholder { color:var(--text3); }
+  .search-box:focus { border-color:var(--accent); }
+  .filter-select { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:7px 14px; font-family:var(--font-mono); font-size:12px; color:var(--text); outline:none; cursor:pointer; }
+
+  /* TABLE */
+  .table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .table-header-row { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:1px solid var(--border); }
+  .table-title { font-family:var(--font-display); font-size:14px; font-weight:700; letter-spacing:-.3px; display:flex; align-items:center; gap:8px; }
+  .count-badge { background:var(--surface2); border:1px solid var(--border2); padding:2px 8px; border-radius:20px; font-size:11px; color:var(--text2); }
+  .btn-row { display:flex; gap:8px; align-items:center; }
+  .btn-add { background:var(--accent); color:#000; border:none; padding:7px 16px; border-radius:6px; font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; cursor:pointer; transition:all .15s; display:flex; align-items:center; gap:6px; }
+  .btn-add:hover { opacity:.85; transform:translateY(-1px); }
+  .btn-export { background:none; border:1px solid var(--green); color:var(--green); padding:7px 14px; border-radius:6px; font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; cursor:pointer; transition:all .15s; display:flex; align-items:center; gap:6px; }
+  .btn-export:hover { background:rgba(0,230,118,.08); transform:translateY(-1px); }
+
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  thead tr { background:var(--surface2); border-bottom:1px solid var(--border); }
+  th { padding:10px 16px; text-align:left; font-size:10px; letter-spacing:1.2px; text-transform:uppercase; color:var(--text3); font-weight:500; white-space:nowrap; user-select:none; cursor:pointer; }
+  th:hover { color:var(--text2); }
+  tbody tr { border-bottom:1px solid var(--border); transition:background .1s; }
+  tbody tr:last-child { border-bottom:none; }
+  tbody tr:hover { background:var(--surface2); }
+  td { padding:11px 16px; color:var(--text2); white-space:nowrap; }
+  td.highlight { color:var(--text); font-weight:500; }
+
+  /* STATUS */
+  .status-badge { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:20px; font-size:10px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; white-space:nowrap; }
+  .status-badge::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; }
+  .status-on-board  { background:rgba(0,230,118,.1);  color:var(--green);  border:1px solid rgba(0,230,118,.2); }
+  .status-ready     { background:rgba(255,215,64,.1); color:var(--yellow); border:1px solid rgba(255,215,64,.2); }
+  .status-at-port   { background:rgba(0,229,255,.1);  color:var(--accent); border:1px solid rgba(0,229,255,.2); }
+  .status-pending   { background:rgba(80,90,114,.2);  color:var(--text3);  border:1px solid rgba(80,90,114,.3); }
+
+  .timeline-bar { width:100px; height:4px; background:var(--border); border-radius:2px; overflow:hidden; }
+  .timeline-fill { height:100%; border-radius:2px; background:var(--accent); }
+  .eta-overdue { color:var(--red) !important; }
+  .eta-soon    { color:var(--orange) !important; }
+  .obs-text    { max-width:150px; overflow:hidden; text-overflow:ellipsis; font-style:italic; font-size:11px; }
+
+  /* ACTION BTNS */
+  .action-btns { display:flex; gap:6px; }
+  .btn-icon { background:none; border:1px solid var(--border); color:var(--text3); padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; transition:all .15s; font-family:var(--font-mono); }
+  .btn-icon:hover     { border-color:var(--accent); color:var(--accent); }
+  .btn-icon.del:hover { border-color:var(--red);    color:var(--red); }
+
+  /* EMPTY */
+  .empty-state { text-align:center; padding:60px 20px; color:var(--text3); }
+  .empty-icon  { font-size:40px; margin-bottom:12px; }
+
+  /* MODAL */
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); backdrop-filter:blur(4px); z-index:200; display:none; align-items:center; justify-content:center; }
+  .modal-overlay.open { display:flex; }
+  .modal { background:var(--surface); border:1px solid var(--border2); border-radius:12px; width:600px; max-width:95vw; max-height:90vh; overflow-y:auto; animation:slideUp .2s ease; }
+  @keyframes slideUp { from{transform:translateY(20px);opacity:0} to{transform:translateY(0);opacity:1} }
+  .modal-header { display:flex; align-items:center; justify-content:space-between; padding:20px 24px; border-bottom:1px solid var(--border); }
+  .modal-title  { font-family:var(--font-display); font-size:16px; font-weight:700; }
+  .modal-close  { background:none; border:none; color:var(--text2); font-size:20px; cursor:pointer; padding:4px 8px; border-radius:4px; line-height:1; }
+  .modal-close:hover { color:var(--text); }
+  .modal-body   { padding:24px; }
+  .form-grid    { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .form-group   { display:flex; flex-direction:column; gap:6px; }
+  .form-group.full { grid-column:1/-1; }
+  .form-label   { font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--text3); }
+  .form-input, .form-select { background:var(--surface2); border:1px solid var(--border2); border-radius:6px; padding:10px 12px; font-family:var(--font-mono); font-size:12px; color:var(--text); outline:none; transition:border-color .2s; width:100%; }
+  .form-input:focus, .form-select:focus { border-color:var(--accent); }
+  .form-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:24px; padding-top:20px; border-top:1px solid var(--border); }
+  .btn-cancel { background:none; border:1px solid var(--border2); color:var(--text2); padding:9px 20px; border-radius:6px; font-family:var(--font-mono); font-size:12px; cursor:pointer; }
+  .btn-cancel:hover { border-color:var(--text2); color:var(--text); }
+  .btn-save   { background:var(--accent); color:#000; border:none; padding:9px 20px; border-radius:6px; font-family:var(--font-mono); font-size:12px; font-weight:700; cursor:pointer; }
+  .btn-save:hover { opacity:.85; }
+
+  /* EXPORT MODAL */
+  .export-modal { width:480px; max-width:95vw; }
+  .export-grid  { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:0 24px 24px; }
+  .export-client-btn { background:var(--surface2); border:1px solid var(--border2); border-radius:8px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; transition:all .15s; font-family:var(--font-mono); color:var(--text); font-size:12px; }
+  .export-client-btn:hover { border-color:var(--green); color:var(--green); background:rgba(0,230,118,.05); }
+  .export-client-name  { font-weight:700; letter-spacing:.5px; }
+  .export-client-count { font-size:10px; color:var(--text3); margin-top:2px; }
+  .btn-export-all { background:var(--green); color:#000; border:none; padding:11px 20px; border-radius:8px; font-family:var(--font-mono); font-size:12px; font-weight:700; text-transform:uppercase; cursor:pointer; width:calc(100% - 48px); margin:0 24px 24px; }
+  .btn-export-all:hover { opacity:.85; }
+
+  /* TOAST */
+  .toast { position:fixed; bottom:24px; right:24px; background:var(--surface); border:1px solid var(--green); color:var(--green); padding:12px 20px; border-radius:8px; font-size:12px; z-index:300; opacity:0; transform:translateY(10px); transition:all .3s; pointer-events:none; }
+  .toast.show { opacity:1; transform:translateY(0); }
+
+  /* LOADING OVERLAY */
+  .loading-overlay { position:fixed; inset:0; background:rgba(10,12,16,.85); z-index:500; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; }
+  .loading-overlay.hidden { display:none; }
+  .spinner { width:36px; height:36px; border:3px solid var(--border2); border-top-color:var(--accent); border-radius:50%; animation:spin 0.8s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .loading-text { font-size:13px; color:var(--text2); }
+
+  ::-webkit-scrollbar { width:6px; height:6px; }
+  ::-webkit-scrollbar-track { background:var(--surface); }
+  ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:3px; }
+  @media(max-width:900px) { .kpi-strip{grid-template-columns:repeat(3,1fr)} .container{padding:16px} .form-grid{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Connecting to database...</div>
+</div>
+
+<header>
+  <div class="logo"><div class="logo-dot"></div>SHIPPING CONTROL</div>
+  <div class="header-right">
+    <div class="sync-status">
+      <div class="sync-dot" id="sync-dot"></div>
+      <span id="sync-label">Connecting...</span>
+    </div>
+    <span class="week-badge" id="week-badge"></span>
+  </div>
+</header>
+
+<div class="container">
+  <div class="kpi-strip">
+    <div class="kpi-card" style="--accent-color:var(--accent)">
+      <div class="kpi-label">Total Orders</div>
+      <div class="kpi-value" id="kpi-total">—</div>
+      <div class="kpi-sub">Active in pipeline</div>
+    </div>
+    <div class="kpi-card" style="--accent-color:var(--green)">
+      <div class="kpi-label">On Board</div>
+      <div class="kpi-value" id="kpi-onboard" style="color:var(--green)">—</div>
+      <div class="kpi-sub">In transit</div>
+    </div>
+    <div class="kpi-card" style="--accent-color:var(--yellow)">
+      <div class="kpi-label">Ready to Load</div>
+      <div class="kpi-value" id="kpi-ready" style="color:var(--yellow)">—</div>
+      <div class="kpi-sub">Awaiting departure</div>
+    </div>
+    <div class="kpi-card" style="--accent-color:var(--accent)">
+      <div class="kpi-label">At Port</div>
+      <div class="kpi-value" id="kpi-port" style="color:var(--accent)">—</div>
+      <div class="kpi-sub">Arrived / clearance</div>
+    </div>
+    <div class="kpi-card" style="--accent-color:var(--text3)">
+      <div class="kpi-label">Pending</div>
+      <div class="kpi-value" id="kpi-pending" style="color:var(--text3)">—</div>
+      <div class="kpi-sub">No vessel assigned</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="client-tabs">
+      <button class="client-tab active" data-client="ALL" onclick="setClient('ALL')">All</button>
+      <button class="client-tab" data-client="BLUELINX"     onclick="setClient('BLUELINX')">Bluelinx</button>
+      <button class="client-tab" data-client="CHARLES GREY" onclick="setClient('CHARLES GREY')">Charles Grey</button>
+      <button class="client-tab" data-client="ECMD"         onclick="setClient('ECMD')">ECMD</button>
+      <button class="client-tab" data-client="KLUMB"        onclick="setClient('KLUMB')">Klumb</button>
+      <button class="client-tab" data-client="METRIE"       onclick="setClient('METRIE')">Metrie</button>
+      <button class="client-tab" data-client="WHOLESALE"    onclick="setClient('WHOLESALE')">Wholesale</button>
+      <button class="client-tab" data-client="WOODGRAIN"    onclick="setClient('WOODGRAIN')">Woodgrain</button>
+    </div>
+    <div class="spacer"></div>
+    <select class="filter-select" id="status-filter" onchange="renderTable()">
+      <option value="ALL">All Statuses</option>
+      <option value="ON BOARD">On Board</option>
+      <option value="READY TO LOAD">Ready to Load</option>
+      <option value="AT PORT">At Port</option>
+      <option value="PENDING">Pending</option>
+    </select>
+    <input class="search-box" type="text" placeholder="Search invoice, PO, vessel..." id="search-input" oninput="renderTable()">
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-header-row">
+      <div class="table-title">Shipment Orders <span class="count-badge" id="row-count">—</span></div>
+      <div class="btn-row">
+        <button class="btn-export" onclick="openExportModal()">⬇ Export XLSX</button>
+        <button class="btn-add" onclick="openModal()">+ New Order</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortBy('client')">Client</th>
+            <th onclick="sortBy('invoice')">Invoice</th>
+            <th onclick="sortBy('po')">PO #</th>
+            <th onclick="sortBy('vessel')">Vessel</th>
+            <th onclick="sortBy('etd')">ETD</th>
+            <th onclick="sortBy('eta')">ETA</th>
+            <th>Container</th>
+            <th>BL #</th>
+            <th onclick="sortBy('status')">Status</th>
+            <th>Progress</th>
+            <th>OBS / Notes</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ORDER MODAL -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">New Order</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Client *</label>
+          <select class="form-select" id="f-client">
+            <option value="">Select client...</option>
+            <option>BLUELINX</option><option>CHARLES GREY</option><option>ECMD</option>
+            <option>KLUMB</option><option>METRIE</option><option>WHOLESALE</option><option>WOODGRAIN</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status *</label>
+          <select class="form-select" id="f-status">
+            <option value="">Select status...</option>
+            <option>ON BOARD</option><option>READY TO LOAD</option>
+            <option>AT PORT</option><option value="PENDING">PENDING</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Invoice #</label><input class="form-input" type="text" id="f-invoice" placeholder="e.g. 13667"></div>
+        <div class="form-group"><label class="form-label">PO #</label><input class="form-input" type="text" id="f-po" placeholder="e.g. 2370996"></div>
+        <div class="form-group"><label class="form-label">CUST. PO (Woodgrain)</label><input class="form-input" type="text" id="f-custpo" placeholder="Optional"></div>
+        <div class="form-group"><label class="form-label">Vessel</label><input class="form-input" type="text" id="f-vessel" placeholder="e.g. MAERSK MONTE AZUL"></div>
+        <div class="form-group"><label class="form-label">ETD</label><input class="form-input" type="date" id="f-etd"></div>
+        <div class="form-group"><label class="form-label">ETA *</label><input class="form-input" type="date" id="f-eta"></div>
+        <div class="form-group"><label class="form-label">Container #</label><input class="form-input" type="text" id="f-container" placeholder="e.g. SUDU8770584"></div>
+        <div class="form-group"><label class="form-label">BL #</label><input class="form-input" type="text" id="f-bl" placeholder="e.g. 265997252"></div>
+        <div class="form-group full"><label class="form-label">OBS / Notes</label><input class="form-input" type="text" id="f-obs" placeholder="e.g. BLANK SAILING, TRANSFERRED BY MAERSK..."></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-save" onclick="saveOrder()">Save Order</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT MODAL -->
+<div class="modal-overlay" id="export-modal">
+  <div class="modal export-modal">
+    <div class="modal-header">
+      <div class="modal-title">Export Weekly Report</div>
+      <button class="modal-close" onclick="closeExportModal()">✕</button>
+    </div>
+    <div style="padding:16px 24px 20px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);">
+      Selecione o cliente ou baixe todos de uma vez.
+    </div>
+    <div style="padding:20px 24px 12px;">
+      <button class="btn-export-all" onclick="exportAll()">⬇ Download All Clients</button>
+    </div>
+    <div style="padding:0 24px 8px;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Ou exportar individualmente:</div>
+    <div class="export-grid" id="export-client-grid"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// SUPABASE CONFIG
+// ═══════════════════════════════════════════════════════
+const SUPABASE_URL = 'https://qbhjqwbvxnoxsuorgpts.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiaGpxd2J2eG5veHN1b3JncHRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MjgwNDEsImV4cCI6MjA4OTUwNDA0MX0.hlVZra8X_-lsy4ojo4AmRTmu6VzpxbIDbghTMutX0mY';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ═══════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════
+let orders = [];
+let currentClient = 'ALL';
+let sortCol = 'eta';
+let sortDir = 1;
+let editingId = null;
+
+// ═══════════════════════════════════════════════════════
+// SYNC UI
+// ═══════════════════════════════════════════════════════
+function setSyncStatus(state, label) {
+  const dot = document.getElementById('sync-dot');
+  const lbl = document.getElementById('sync-label');
+  dot.className = 'sync-dot ' + state;
+  lbl.textContent = label;
+}
+
+// ═══════════════════════════════════════════════════════
+// DATABASE SETUP — create table if not exists via RPC
+// ═══════════════════════════════════════════════════════
+async function setupTable() {
+  // Try to select — if table doesn't exist it will error
+  const { error } = await db.from('shipments').select('id').limit(1);
+  if (error && error.code === '42P01') {
+    // Table doesn't exist — create it via SQL
+    await db.rpc('exec_sql', { sql: `
+      CREATE TABLE IF NOT EXISTS shipments (
+        id BIGSERIAL PRIMARY KEY,
+        client TEXT NOT NULL,
+        invoice TEXT,
+        po TEXT,
+        custpo TEXT DEFAULT '',
+        vessel TEXT DEFAULT '',
+        etd TEXT DEFAULT '',
+        eta TEXT DEFAULT '',
+        container TEXT DEFAULT '',
+        bl TEXT DEFAULT '',
+        status TEXT DEFAULT 'PENDING',
+        obs TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      ALTER TABLE shipments ENABLE ROW LEVEL SECURITY;
+      CREATE POLICY "public_all" ON shipments FOR ALL USING (true) WITH CHECK (true);
+    `});
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// SEED — insert initial data if table is empty
+// ═══════════════════════════════════════════════════════
+const SEED_ORDERS = [
+  {client:'ECMD',invoice:'13667',po:'2370996',custpo:'',vessel:'RDO FORTUNE',etd:'2026-07-03',eta:'2026-03-30',container:'SUDU8770584',bl:'265997252',status:'ON BOARD',obs:''},
+  {client:'ECMD',invoice:'13668',po:'2370998',custpo:'',vessel:'MAERSK MONTE AZUL',etd:'2026-02-20',eta:'2026-03-16',container:'SUDU6796002',bl:'265996797',status:'ON BOARD',obs:''},
+  {client:'ECMD',invoice:'13669',po:'2371001',custpo:'',vessel:'RDO FORTUNE',etd:'2026-06-03',eta:'2026-03-30',container:'MRKU3762404',bl:'266566533',status:'AT PORT',obs:''},
+  {client:'ECMD',invoice:'13670',po:'2371002',custpo:'',vessel:'MAERSK FORTALEZA',etd:'2026-03-20',eta:'2026-04-13',container:'',bl:'267147439',status:'READY TO LOAD',obs:''},
+  {client:'ECMD',invoice:'13910',po:'2386686',custpo:'',vessel:'MAERSK MONTE AZUL',etd:'2026-02-20',eta:'2026-03-16',container:'MRKU4085720',bl:'265996977',status:'ON BOARD',obs:''},
+  {client:'ECMD',invoice:'13905',po:'2386692',custpo:'',vessel:'MAERSK MONTE AZUL',etd:'2026-02-20',eta:'2026-03-16',container:'MRSU6347441',bl:'265997130',status:'ON BOARD',obs:''},
+  {client:'ECMD',invoice:'13911',po:'2386684',custpo:'',vessel:'',etd:'',eta:'2026-05-22',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'ECMD',invoice:'13904',po:'2386685',custpo:'',vessel:'',etd:'',eta:'2026-05-22',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'ECMD',invoice:'13909',po:'2386687',custpo:'',vessel:'MAERSK FRANKFURT',etd:'2026-03-27',eta:'2026-04-20',container:'',bl:'266608316',status:'READY TO LOAD',obs:''},
+  {client:'ECMD',invoice:'13908',po:'2386689',custpo:'',vessel:'MAERSK FRANKFURT',etd:'2026-03-27',eta:'2026-04-20',container:'',bl:'266607813',status:'READY TO LOAD',obs:''},
+  {client:'ECMD',invoice:'13907',po:'2386690',custpo:'',vessel:'MSC BASEL V',etd:'2026-03-23',eta:'2026-09-05',container:'',bl:'EBKG15934144',status:'READY TO LOAD',obs:''},
+  {client:'ECMD',invoice:'13906',po:'2386691',custpo:'',vessel:'',etd:'',eta:'2026-05-22',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'ECMD',invoice:'13912',po:'2386693',custpo:'',vessel:'MAERSK FRANKFURT',etd:'2026-03-27',eta:'2026-04-20',container:'',bl:'267147510',status:'PENDING',obs:''},
+  {client:'ECMD',invoice:'13960',po:'2385772',custpo:'',vessel:'',etd:'',eta:'2026-05-15',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'ECMD',invoice:'13961',po:'2385773',custpo:'',vessel:'',etd:'',eta:'2026-05-15',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'ECMD',invoice:'13962',po:'2385775',custpo:'',vessel:'',etd:'',eta:'2026-05-15',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'ECMD',invoice:'13963',po:'2385777',custpo:'',vessel:'MAERSK FORTALEZA',etd:'2026-03-20',eta:'2026-04-13',container:'TCKU6424162',bl:'266864668',status:'AT PORT',obs:''},
+  {client:'ECMD',invoice:'13964',po:'2387076',custpo:'',vessel:'',etd:'',eta:'2026-12-06',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'ECMD',invoice:'13965',po:'2387077',custpo:'',vessel:'',etd:'',eta:'2026-12-06',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'ECMD',invoice:'13966',po:'2387083',custpo:'',vessel:'',etd:'',eta:'2026-12-06',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'KLUMB',invoice:'13943',po:'438055',custpo:'',vessel:'',etd:'',eta:'2026-05-15',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'METRIE',invoice:'13790',po:'4500399261',custpo:'',vessel:'MAERSK MONTE ALEGRE',etd:'2026-02-27',eta:'2026-03-31',container:'MRSU6395861',bl:'266606293',status:'ON BOARD',obs:''},
+  {client:'METRIE',invoice:'13791',po:'4500399357',custpo:'',vessel:'MSC BASEL V',etd:'2026-03-23',eta:'2026-05-11',container:'',bl:'EBKG15934083',status:'READY TO LOAD',obs:'TRANSFERRED BY MSC'},
+  {client:'METRIE',invoice:'14020',po:'4500405645',custpo:'',vessel:'',etd:'',eta:'2026-06-08',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'13677',po:'4500760697',custpo:'',vessel:'MAERSK CHAMBAL',etd:'2026-02-12',eta:'2026-03-11',container:'MSKU1717711',bl:'265693702',status:'ON BOARD',obs:''},
+  {client:'WOODGRAIN',invoice:'13783',po:'4500768642',custpo:'',vessel:'MSC VANCOUVER',etd:'2026-03-26',eta:'2026-04-22',container:'',bl:'266576365',status:'READY TO LOAD',obs:''},
+  {client:'WOODGRAIN',invoice:'13784',po:'4500768643',custpo:'',vessel:'MSC MAGNUM VII',etd:'2026-03-05',eta:'2026-04-01',container:'HASU4946250',bl:'266576230',status:'ON BOARD',obs:''},
+  {client:'WOODGRAIN',invoice:'13785',po:'4500768644',custpo:'',vessel:'MAERSK CHACHAI',etd:'2026-02-26',eta:'2026-03-25',container:'MRKU3295948',bl:'266115612',status:'ON BOARD',obs:''},
+  {client:'WOODGRAIN',invoice:'13786',po:'4500768645',custpo:'',vessel:'MAERSK RUBICON',etd:'2026-03-19',eta:'2026-04-27',container:'',bl:'266745594',status:'READY TO LOAD',obs:'BLANK SAILING'},
+  {client:'WOODGRAIN',invoice:'13787',po:'4500768646',custpo:'',vessel:'RADO FORTUNE',etd:'2026-03-06',eta:'2026-03-31',container:'TIIU4704471',bl:'266602888',status:'ON BOARD',obs:'TRANSFERRED BY MAERSK'},
+  {client:'WOODGRAIN',invoice:'13788',po:'4500768647',custpo:'',vessel:'MAERSK FREEPORT',etd:'2026-02-13',eta:'2026-03-12',container:'SUDU8661562',bl:'266114548',status:'ON BOARD',obs:''},
+  {client:'WOODGRAIN',invoice:'13812',po:'4500770491',custpo:'',vessel:'MAERSK CHACHAI',etd:'2026-02-26',eta:'2026-03-28',container:'TCNU6596206',bl:'266165788',status:'ON BOARD',obs:''},
+  {client:'WOODGRAIN',invoice:'13813',po:'4500770503',custpo:'',vessel:'MSC MAGNUM VII',etd:'2026-03-05',eta:'2026-04-11',container:'MSKU8752015',bl:'266165825',status:'ON BOARD',obs:''},
+  {client:'WOODGRAIN',invoice:'13895',po:'4500777581',custpo:'',vessel:'',etd:'',eta:'2026-05-18',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'13896',po:'4500777582',custpo:'',vessel:'',etd:'',eta:'2026-05-18',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'13897',po:'4500777583',custpo:'',vessel:'',etd:'',eta:'2026-05-18',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'13898',po:'4500777584',custpo:'',vessel:'',etd:'',eta:'2026-05-18',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'13899',po:'4500777585',custpo:'',vessel:'',etd:'',eta:'2026-04-05',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'13939',po:'4500779520',custpo:'',vessel:'MSC VANCOUVER',etd:'2026-03-26',eta:'2026-04-22',container:'',bl:'266576365',status:'READY TO LOAD',obs:''},
+  {client:'WOODGRAIN',invoice:'13940',po:'4500779521',custpo:'',vessel:'',etd:'',eta:'2026-05-18',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'13941',po:'4500779522',custpo:'',vessel:'MSC VANCOUVER',etd:'2026-03-26',eta:'2026-04-25',container:'',bl:'721357117',status:'READY TO LOAD',obs:''},
+  {client:'WOODGRAIN',invoice:'13942',po:'4500779524',custpo:'',vessel:'',etd:'',eta:'2026-05-11',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'14028',po:'4500785496',custpo:'',vessel:'',etd:'',eta:'2026-06-01',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'14029',po:'4500785497',custpo:'',vessel:'',etd:'',eta:'2026-06-08',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'14030',po:'4500785499',custpo:'',vessel:'',etd:'',eta:'2026-06-08',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'14031',po:'4500785501',custpo:'',vessel:'',etd:'',eta:'2026-06-01',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'14032',po:'4500785502',custpo:'',vessel:'',etd:'',eta:'2026-06-08',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'14033',po:'4500785503',custpo:'',vessel:'',etd:'',eta:'2026-06-15',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'14034',po:'4500785504',custpo:'',vessel:'',etd:'',eta:'2026-06-01',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'14035',po:'4500785505',custpo:'',vessel:'',etd:'',eta:'2026-06-01',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'14036',po:'4500785507',custpo:'',vessel:'',etd:'',eta:'2026-06-08',container:'',bl:'',status:'PENDING',obs:''},
+  {client:'WOODGRAIN',invoice:'14037',po:'4500785509',custpo:'',vessel:'',etd:'',eta:'2026-06-08',container:'',bl:'',status:'PENDING',obs:''},
+];
+
+// ═══════════════════════════════════════════════════════
+// LOAD DATA
+// ═══════════════════════════════════════════════════════
+async function loadOrders() {
+  setSyncStatus('loading', 'Loading...');
+  const { data, error } = await db.from('shipments').select('*').order('eta', { ascending: true });
+  if (error) {
+    setSyncStatus('error', 'Connection error');
+    showToast('Error loading data', true);
+    return;
+  }
+  orders = data;
+  setSyncStatus('ok', 'Live · Supabase');
+  renderTable();
+  document.getElementById('loading-overlay').classList.add('hidden');
+}
+
+// ═══════════════════════════════════════════════════════
+// REALTIME — auto-refresh when any client edits
+// ═══════════════════════════════════════════════════════
+function subscribeRealtime() {
+  db.channel('shipments-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'shipments' }, () => {
+      loadOrders();
+    })
+    .subscribe();
+}
+
+// ═══════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════
+function parseDate(str) { if (!str) return null; const d = new Date(str); return isNaN(d) ? null : d; }
+function fmtDate(str) { const d = parseDate(str); if (!d) return '—'; return d.toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'}); }
+function etaDaysLeft(eta) { const d = parseDate(eta); if (!d) return null; const t = new Date(); t.setHours(0,0,0,0); return Math.ceil((d-t)/86400000); }
+function etaClass(eta) { const d = etaDaysLeft(eta); if (d===null) return ''; if (d<0) return 'eta-overdue'; if (d<=7) return 'eta-soon'; return ''; }
+function statusClass(s) { if (!s||s==='PENDING') return 'status-pending'; if (s==='ON BOARD') return 'status-on-board'; if (s==='READY TO LOAD') return 'status-ready'; if (s==='AT PORT') return 'status-at-port'; return 'status-pending'; }
+function getProgress(o) { if (o.status==='ON BOARD') return 75; if (o.status==='READY TO LOAD') return 35; if (o.status==='AT PORT') return 95; return 10; }
+function progressColor(p) { if (p>=90) return 'var(--accent)'; if (p>=70) return 'var(--green)'; if (p>=30) return 'var(--yellow)'; return 'var(--text3)'; }
+
+function setWeekBadge() {
+  const now = new Date(); const start = new Date(now.getFullYear(),0,1);
+  const week = Math.ceil(((now-start)/86400000+start.getDay()+1)/7);
+  document.getElementById('week-badge').textContent = `Week ${week} · ${now.getFullYear()}`;
+}
+
+function updateKPIs(data) {
+  document.getElementById('kpi-total').textContent   = data.length;
+  document.getElementById('kpi-onboard').textContent = data.filter(o=>o.status==='ON BOARD').length;
+  document.getElementById('kpi-ready').textContent   = data.filter(o=>o.status==='READY TO LOAD').length;
+  document.getElementById('kpi-port').textContent    = data.filter(o=>o.status==='AT PORT').length;
+  document.getElementById('kpi-pending').textContent = data.filter(o=>!o.status||o.status==='PENDING').length;
+}
+
+function setClient(c) {
+  currentClient = c;
+  document.querySelectorAll('.client-tab').forEach(t => t.classList.toggle('active', t.dataset.client===c));
+  renderTable();
+}
+
+function sortBy(col) { if (sortCol===col) sortDir*=-1; else { sortCol=col; sortDir=1; } renderTable(); }
+
+// ═══════════════════════════════════════════════════════
+// RENDER TABLE
+// ═══════════════════════════════════════════════════════
+function renderTable() {
+  const search = document.getElementById('search-input').value.toLowerCase();
+  const sf = document.getElementById('status-filter').value;
+  let data = orders.filter(o => {
+    if (currentClient!=='ALL' && o.client!==currentClient) return false;
+    if (sf!=='ALL') { const s=o.status||'PENDING'; if (sf==='PENDING'&&s!=='PENDING') return false; if (sf!=='PENDING'&&s!==sf) return false; }
+    if (search) { const hay=[o.invoice,o.po,o.vessel,o.container,o.bl,o.obs,o.client].join(' ').toLowerCase(); if (!hay.includes(search)) return false; }
+    return true;
+  });
+  data.sort((a,b) => {
+    let va=a[sortCol]||'', vb=b[sortCol]||'';
+    if (sortCol==='eta'||sortCol==='etd') { va=parseDate(va)||new Date(9999,0); vb=parseDate(vb)||new Date(9999,0); return sortDir*(va-vb); }
+    return sortDir*String(va).localeCompare(String(vb));
+  });
+  updateKPIs(data);
+  document.getElementById('row-count').textContent = `${data.length} order${data.length!==1?'s':''}`;
+  const tbody = document.getElementById('table-body');
+  if (data.length===0) { tbody.innerHTML=`<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">📦</div><div>No orders match the current filter</div></div></td></tr>`; return; }
+  const showClient = currentClient==='ALL';
+  tbody.innerHTML = data.map(o => {
+    const p=getProgress(o), ec=etaClass(o.eta), days=etaDaysLeft(o.eta);
+    const dstr = days!==null?(days<0?`${Math.abs(days)}d overdue`:days===0?'Today':`${days}d`):'';
+    return `<tr>
+      <td class="highlight" style="color:var(--accent);font-weight:700;font-size:10px;letter-spacing:1px;${showClient?'':'display:none'}">${o.client}</td>
+      <td class="highlight">${o.invoice||'—'}</td>
+      <td>${o.po||'—'}</td>
+      <td style="color:var(--text);max-width:160px;overflow:hidden;text-overflow:ellipsis">${o.vessel||'—'}</td>
+      <td>${fmtDate(o.etd)}</td>
+      <td class="${ec}">${fmtDate(o.eta)}${dstr?`<span style="font-size:10px;margin-left:4px;opacity:.7">${dstr}</span>`:''}</td>
+      <td style="font-size:11px">${o.container||'—'}</td>
+      <td style="font-size:11px">${o.bl||'—'}</td>
+      <td><span class="status-badge ${statusClass(o.status)}">${o.status||'PENDING'}</span></td>
+      <td><div class="timeline-bar"><div class="timeline-fill" style="width:${p}%;background:${progressColor(p)}"></div></div></td>
+      <td class="obs-text" title="${o.obs||''}">${o.obs||'—'}</td>
+      <td><div class="action-btns">
+        <button class="btn-icon" onclick="editOrder(${o.id})">✏</button>
+        <button class="btn-icon del" onclick="deleteOrder(${o.id})">✕</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  // show/hide client column header
+  document.querySelectorAll('thead th:first-child').forEach(el => el.style.display = showClient?'':'none');
+}
+
+// ═══════════════════════════════════════════════════════
+// MODAL
+// ═══════════════════════════════════════════════════════
+function openModal(order) {
+  editingId = order ? order.id : null;
+  document.getElementById('modal-title').textContent = order ? 'Edit Order' : 'New Order';
+  document.getElementById('f-client').value    = order?.client    || '';
+  document.getElementById('f-status').value    = order?.status    || '';
+  document.getElementById('f-invoice').value   = order?.invoice   || '';
+  document.getElementById('f-po').value        = order?.po        || '';
+  document.getElementById('f-custpo').value    = order?.custpo    || '';
+  document.getElementById('f-vessel').value    = order?.vessel    || '';
+  document.getElementById('f-etd').value       = order?.etd       || '';
+  document.getElementById('f-eta').value       = order?.eta       || '';
+  document.getElementById('f-container').value = order?.container || '';
+  document.getElementById('f-bl').value        = order?.bl        || '';
+  document.getElementById('f-obs').value       = order?.obs       || '';
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('open'); editingId = null; }
+
+async function saveOrder() {
+  const o = {
+    client: document.getElementById('f-client').value,
+    status: document.getElementById('f-status').value || 'PENDING',
+    invoice: document.getElementById('f-invoice').value,
+    po: document.getElementById('f-po').value,
+    custpo: document.getElementById('f-custpo').value,
+    vessel: document.getElementById('f-vessel').value,
+    etd: document.getElementById('f-etd').value,
+    eta: document.getElementById('f-eta').value,
+    container: document.getElementById('f-container').value,
+    bl: document.getElementById('f-bl').value,
+    obs: document.getElementById('f-obs').value,
+  };
+  if (!o.client || !o.eta) { showToast('Client and ETA are required!', true); return; }
+  setSyncStatus('loading', 'Saving...');
+  let error;
+  if (editingId) {
+    ({ error } = await db.from('shipments').update(o).eq('id', editingId));
+  } else {
+    ({ error } = await db.from('shipments').insert(o));
+  }
+  if (error) { showToast('Save error!', true); setSyncStatus('error','Error'); return; }
+  showToast(editingId ? 'Order updated!' : 'Order added!');
+  closeModal();
+  await loadOrders();
+}
+
+async function editOrder(id) {
+  const o = orders.find(x => x.id===id);
+  if (o) openModal(o);
+}
+
+async function deleteOrder(id) {
+  if (!confirm('Remove this order from the pipeline?')) return;
+  setSyncStatus('loading','Deleting...');
+  const { error } = await db.from('shipments').delete().eq('id', id);
+  if (error) { showToast('Delete error!', true); return; }
+  showToast('Order removed');
+  await loadOrders();
+}
+
+// ═══════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.borderColor = isError ? 'var(--red)' : 'var(--green)';
+  t.style.color = isError ? 'var(--red)' : 'var(--green)';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ═══════════════════════════════════════════════════════
+// EXPORT XLSX (xlsx-js-style — works in browser)
+// ═══════════════════════════════════════════════════════
+const CLIENTS = ['BLUELINX','CHARLES GREY','ECMD','KLUMB','METRIE','WHOLESALE','WOODGRAIN'];
+const C_NAVY='0D1C3F', C_GREEN='5B9E3A', C_WHITE='FFFFFF', C_LGRAY='F4F6FA', C_DGRAY='8891A8';
+const STATUS_S={'ON BOARD':{fc:'1A5E38',bg:'D6F4E3'},'READY TO LOAD':{fc:'7A5100',bg:'FFF3CD'},'AT PORT':{fc:'0A4275',bg:'D0E8FB'},'PENDING':{fc:'505A72',bg:'ECEEF3'}};
+
+function cellS(fc,bg,bold,sz,hAlign){return{font:{name:'Calibri',sz:sz||10,bold:!!bold,color:{rgb:fc||'1A1A2E'}},fill:bg?{patternType:'solid',fgColor:{rgb:bg}}:undefined,alignment:{horizontal:hAlign||'left',vertical:'center'},border:{top:{style:'thin',color:{rgb:'C8D0DC'}},bottom:{style:'thin',color:{rgb:'C8D0DC'}},left:{style:'thin',color:{rgb:'C8D0DC'}},right:{style:'thin',color:{rgb:'C8D0DC'}}}};}
+function hdrS(){return{font:{name:'Calibri',sz:10,bold:true,color:{rgb:C_WHITE}},fill:{patternType:'solid',fgColor:{rgb:C_NAVY}},alignment:{horizontal:'center',vertical:'center'},border:{top:{style:'medium',color:{rgb:C_GREEN}},bottom:{style:'medium',color:{rgb:C_GREEN}},left:{style:'thin',color:{rgb:'4A6080'}},right:{style:'thin',color:{rgb:'4A6080'}}}};}
+function bannerS(){return{font:{name:'Calibri',sz:14,bold:true,color:{rgb:C_WHITE}},fill:{patternType:'solid',fgColor:{rgb:C_NAVY}},alignment:{horizontal:'left',vertical:'center'},border:{top:{style:'medium',color:{rgb:C_GREEN}},bottom:{style:'medium',color:{rgb:C_GREEN}}}};}
+function statusS(val){const st=STATUS_S[val]||STATUS_S['PENDING'];return{font:{name:'Calibri',sz:9,bold:true,color:{rgb:st.fc}},fill:{patternType:'solid',fgColor:{rgb:st.bg}},alignment:{horizontal:'center',vertical:'center'},border:{top:{style:'thin',color:{rgb:'C8D0DC'}},bottom:{style:'thin',color:{rgb:'C8D0DC'}},left:{style:'thin',color:{rgb:'C8D0DC'}},right:{style:'thin',color:{rgb:'C8D0DC'}}}};}
+
+function fmtDateExport(str){if(!str)return'';const d=new Date(str);if(isNaN(d))return str;return`${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}/${d.getFullYear()}`;}
+function getWeekStr(){const now=new Date();const start=new Date(now.getFullYear(),0,1);const week=Math.ceil(((now-start)/86400000+start.getDay()+1)/7);return`W${String(week).padStart(2,'0')}_${now.getFullYear()}`;}
+
+function buildAndDownload(client) {
+  const clientOrders = orders.filter(o=>o.client===client);
+  const isWoodgrain = client==='WOODGRAIN', hasTimeline=['BLUELINX','KLUMB'].includes(client);
+  const cols = isWoodgrain?['INVOICE','PO #','CUST. PO','VESSEL','ETD','ETA','CONTAINER','BL #','STATUS','OBS']:hasTimeline?['INVOICE','PO #','VESSEL','ETD','ETA','CONTAINER','BL #','STATUS','TIMELINE']:['INVOICE','PO #','VESSEL','ETD','ETA','CONTAINER','BL #','STATUS','OBS'];
+  const colW = isWoodgrain?[14,16,14,26,13,13,18,18,18,30]:[14,16,26,13,13,18,18,18,30];
+  const nc=cols.length; const ws={};
+  ws[XLSX.utils.encode_cell({r:1,c:1})]={v:'SALVARO INDUSTRIAL',t:'s',s:{font:{name:'Calibri',sz:16,bold:true,color:{rgb:C_NAVY}},alignment:{horizontal:'left',vertical:'center'}}};
+  ws[XLSX.utils.encode_cell({r:2,c:1})]={v:'Weekly Shipping Report',t:'s',s:{font:{name:'Calibri',sz:10,italic:true,color:{rgb:C_GREEN}},alignment:{horizontal:'left',vertical:'center'}}};
+  for(let c=0;c<nc;c++) ws[XLSX.utils.encode_cell({r:4,c:c+1})]={v:c===0?client:'',t:'s',s:bannerS()};
+  cols.forEach((name,c)=>{ws[XLSX.utils.encode_cell({r:5,c:c+1})]={v:name,t:'s',s:hdrS()};});
+  clientOrders.forEach((o,rIdx)=>{
+    const r=6+rIdx, bg=rIdx%2!==0?C_LGRAY:C_WHITE;
+    const values=isWoodgrain?[o.invoice||'',o.po||'',o.custpo||'',o.vessel||'',fmtDateExport(o.etd),fmtDateExport(o.eta),o.container||'',o.bl||'',o.status||'PENDING',o.obs||'']:[o.invoice||'',o.po||'',o.vessel||'',fmtDateExport(o.etd),fmtDateExport(o.eta),o.container||'',o.bl||'',o.status||'PENDING',o.obs||''];
+    values.forEach((val,c)=>{
+      const addr=XLSX.utils.encode_cell({r,c:c+1}), col=cols[c];
+      if(col==='STATUS'){ws[addr]={v:val,t:'s',s:statusS(val)};}
+      else{const center=['ETD','ETA','INVOICE'].includes(col);ws[addr]={v:val,t:'s',s:cellS(null,bg,false,10,center?'center':'left')};}
+    });
+  });
+  const fR=6+clientOrders.length+1, today=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  ws[XLSX.utils.encode_cell({r:fR,c:1})]={v:`Salvaro Industrial  ·  Weekly Shipping Report  ·  ${today}`,t:'s',s:{font:{name:'Calibri',sz:9,italic:true,color:{rgb:C_DGRAY}},fill:{patternType:'solid',fgColor:{rgb:'F0F2F6'}},alignment:{horizontal:'right',vertical:'center'}}};
+  ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:fR,c:nc}});
+  ws['!merges']=[{s:{r:1,c:1},e:{r:1,c:nc}},{s:{r:2,c:1},e:{r:2,c:nc}},{s:{r:4,c:1},e:{r:4,c:nc}},{s:{r:fR,c:1},e:{r:fR,c:nc}}];
+  ws['!cols']=[{wch:2},...colW.map(w=>({wch:w}))];
+  ws['!rows']=[{hpt:8},{hpt:26},{hpt:18},{hpt:8},{hpt:26},{hpt:22},...clientOrders.map(()=>({hpt:18})),{hpt:8},{hpt:16}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Plan1');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([]),'Plan2');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([]),'Plan3');
+  XLSX.writeFile(wb,`WEEKLY_SHIPPING_REPORT_-_${client.replace(/ /g,'_')}_${getWeekStr()}.xlsx`);
+}
+
+function openExportModal() {
+  const grid=document.getElementById('export-client-grid');
+  grid.innerHTML=CLIENTS.map(c=>{const count=orders.filter(o=>o.client===c).length;return`<button class="export-client-btn" onclick="exportClient('${c}')"><div><div class="export-client-name">${c}</div><div class="export-client-count">${count} order${count!==1?'s':''}</div></div><div>⬇</div></button>`;}).join('');
+  document.getElementById('export-modal').classList.add('open');
+}
+function closeExportModal(){document.getElementById('export-modal').classList.remove('open');}
+
+function exportClient(client){
+  closeExportModal();
+  try{buildAndDownload(client);showToast(`✓ Downloaded: ${client}`);}
+  catch(e){showToast('Export error',true);console.error(e);}
+}
+async function exportAll(){
+  closeExportModal(); showToast('Downloading all...');
+  for(const client of CLIENTS){
+    if(orders.some(o=>o.client===client)){try{buildAndDownload(client);}catch(e){console.error(e);}await new Promise(r=>setTimeout(r,400));}
+  }
+  showToast('✓ All reports downloaded!');
+}
+
+// ═══════════════════════════════════════════════════════
+// CLOSE MODALS ON OVERLAY CLICK
+// ═══════════════════════════════════════════════════════
+document.getElementById('modal').addEventListener('click',function(e){if(e.target===this)closeModal();});
+document.getElementById('export-modal').addEventListener('click',function(e){if(e.target===this)closeExportModal();});
+
+// ═══════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════
+async function init() {
+  setWeekBadge();
+  setSyncStatus('loading','Connecting...');
+  try {
+    // Check if table exists and has data
+    const { data, error } = await db.from('shipments').select('id').limit(1);
+    if (error) throw error;
+    if (data.length === 0) {
+      // Seed initial data
+      setSyncStatus('loading','Seeding data...');
+      await db.from('shipments').insert(SEED_ORDERS);
+    }
+    await loadOrders();
+    subscribeRealtime();
+  } catch(e) {
+    console.error('Init error:', e);
+    setSyncStatus('error','Connection failed');
+    document.getElementById('loading-overlay').classList.add('hidden');
+    showToast('Could not connect to database', true);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
