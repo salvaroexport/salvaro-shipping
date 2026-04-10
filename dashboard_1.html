@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Salvaro — Export Dashboard</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body,#root{height:100%;font-family:"DM Sans",sans-serif}
+body{background:#0F1C2E;color:#E2EAF4}
+:root{
+  --navy:#0F1C2E;--navy2:#162435;--navy3:#1E3048;
+  --teal:#0EA5E9;--teal2:#38BDF8;--gold:#F59E0B;
+  --green:#10B981;--red:#EF4444;--orange:#F97316;
+  --text:#E2EAF4;--text2:#8BA3BF;--text3:#4D6680;
+  --border:rgba(14,165,233,0.15);--card:rgba(22,36,53,0.9);
+  --radius:12px;--shadow:0 4px 24px rgba(0,0,0,0.4)
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes sp{to{transform:rotate(360deg)}}
+@keyframes su{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div id="root">
+  <div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Syne,sans-serif;color:#38BDF8;font-size:18px;gap:12px">
+    <div style="width:24px;height:24px;border:3px solid rgba(14,165,233,0.3);border-top-color:#38BDF8;border-radius:50%;animation:spin .7s linear infinite"></div>
+    Carregando...
+  </div>
+</div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useCallback } = React;
+const { createClient } = supabase;
+const db = createClient(
+  "https://qbhjqwbvxnoxsuorgpts.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiaGpxd2J2eG5veHN1b3JncHRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MjgwNDEsImV4cCI6MjA4OTUwNDA0MX0.hlVZra8X_-lsy4ojo4AmRTmu6VzpxbIDbghTMutX0mY"
+);
+
+const CLIENTES   = ["ECMD","WOODGRAIN","METRIE","CHARLES GREY","KLUMB","BLUELINX","WHOLESALE","THE WOOD HUB"];
+const DESTINOS   = ["CHARLESTON","BALTIMORE","HOUSTON","JACKSONVILLE","SAVANNAH","NEW ORLEANS","MOBILE","DDP HOUSTON","DDP SAVANNAH","DDP JACKSONVILLE"];
+const PORTOS     = ["IMBITUBA","ITAJAI","PARANAGUÁ","SANTOS","ITAPOA"];
+const TRANSP     = ["TIS","KAIROS","ELITE","RIO BRANCO","DHL"];
+const STATUS_DOC = ["PENDENTE","FALTA BL","COMPLETO"];
+const STATUS_EMB = ["EM PRODUÇÃO","AGD ESTUFAGEM","EMBARCADO","EM TRÂNSITO","ENTREGUE"];
+const MESES      = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];
+const ANOS       = ["2025","2026","2027"];
+const ALL_MONTHS = ANOS.flatMap(a => MESES.map(m => m + " " + a));
+
+const fmtUSD = v => (!v && v!==0) ? "—" : new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2}).format(v);
+const fmtDate = d => { if(!d) return "—"; const dt=new Date(d+"T00:00:00"); return isNaN(dt)?"—":dt.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"}); };
+
+const CSS = `
+.app{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:220px;min-width:220px;background:var(--navy2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
+.logo{padding:22px 20px 14px;border-bottom:1px solid var(--border)}
+.logo h1{font-family:Syne,sans-serif;font-size:20px;font-weight:800;letter-spacing:-0.5px;line-height:1}
+.logo span{color:var(--teal)}
+.logo p{font-size:11px;color:var(--text2);margin-top:4px;letter-spacing:.5px;text-transform:uppercase}
+.nav{padding:14px 12px 8px}
+.nlbl{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:1px;text-transform:uppercase;padding:0 8px;margin-bottom:6px}
+.ni{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .15s;border:1px solid transparent;margin-bottom:2px}
+.ni:hover{background:rgba(255,255,255,.04);color:var(--text)}
+.ni.on{background:rgba(14,165,233,.12);color:var(--teal2);border-color:rgba(14,165,233,.2)}
+.ni svg{width:16px;height:16px;flex-shrink:0}
+.sft{margin-top:auto;padding:14px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)}
+.main{flex:1;overflow-y:auto}
+.page{padding:26px 30px;max-width:1600px}
+.ph{margin-bottom:22px}
+.ph h2{font-family:Syne,sans-serif;font-size:24px;font-weight:700;letter-spacing:-.5px}
+.ph p{color:var(--text2);font-size:13px;margin-top:4px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
+.ct{font-family:Syne,sans-serif;font-size:12px;font-weight:600;color:var(--text2);letter-spacing:.5px;text-transform:uppercase;margin-bottom:12px}
+.kg{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px;margin-bottom:20px}
+.kp{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+.kp.hi{border-color:rgba(14,165,233,.35);background:linear-gradient(135deg,rgba(14,165,233,.08),var(--card))}
+.kl{font-size:10.5px;font-weight:600;color:var(--text3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px}
+.kv{font-family:Syne,sans-serif;font-size:26px;font-weight:700;line-height:1}
+.kv.tc{color:var(--teal2)}.kv.gc{color:var(--gold)}.kv.gr{color:var(--green)}
+.ks{font-size:11px;color:var(--text3);margin-top:5px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.mb16{margin-bottom:16px}.mb20{margin-bottom:20px}
+.tw{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead tr{background:rgba(14,165,233,.08);border-bottom:1px solid var(--border)}
+th{padding:9px 13px;text-align:left;font-size:10px;font-weight:600;color:var(--text2);letter-spacing:.7px;text-transform:uppercase;white-space:nowrap}
+tbody tr{border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s;cursor:pointer}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:rgba(14,165,233,.05)}
+td{padding:8px 13px;color:var(--text);white-space:nowrap}
+td.m{color:var(--text2)} td.r{text-align:right;font-variant-numeric:tabular-nums}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;letter-spacing:.3px}
+.bge{background:rgba(16,185,129,.15);color:#34D399;border:1px solid rgba(16,185,129,.25)}
+.bgy{background:rgba(245,158,11,.15);color:#FCD34D;border:1px solid rgba(245,158,11,.25)}
+.bgr{background:rgba(239,68,68,.15);color:#FCA5A5;border:1px solid rgba(239,68,68,.25)}
+.bgb{background:rgba(14,165,233,.15);color:#7DD3FC;border:1px solid rgba(14,165,233,.25)}
+.bgo{background:rgba(249,115,22,.15);color:#FDBA74;border:1px solid rgba(249,115,22,.25)}
+.bgg{background:rgba(255,255,255,.07);color:var(--text2);border:1px solid rgba(255,255,255,.1)}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:10.5px;font-weight:600;color:var(--text2);letter-spacing:.5px;text-transform:uppercase}
+.field input,.field select{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-family:"DM Sans",sans-serif;font-size:13px;outline:none;transition:border-color .15s;width:100%}
+.field input:focus,.field select:focus{border-color:var(--teal);background:rgba(14,165,233,.06)}
+.field select option{background:var(--navy2)}
+.field input[type=date]{color-scheme:dark}
+.fr{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:13px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 17px;border-radius:8px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.bp{background:var(--teal);color:#fff}.bp:hover{background:var(--teal2)}
+.bg2{background:transparent;color:var(--text2);border:1px solid var(--border)}.bg2:hover{background:rgba(255,255,255,.04);color:var(--text)}
+.bd{background:rgba(239,68,68,.15);color:#FCA5A5;border:1px solid rgba(239,68,68,.25)}.bd:hover{background:rgba(239,68,68,.25)}
+.bgd{background:var(--gold);color:#000}.bgd:hover{background:#FCD34D}
+.bsm{padding:5px 11px;font-size:12px}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:var(--navy2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:860px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,.6);animation:su .2s ease}
+.mh{padding:22px 26px 0;display:flex;align-items:center;justify-content:space-between}
+.mh h3{font-family:Syne,sans-serif;font-size:19px;font-weight:700}
+.mb2{padding:18px 26px 26px}
+.mac{display:flex;gap:10px;justify-content:flex-end;margin-top:22px;padding-top:18px;border-top:1px solid var(--border)}
+.fb{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.fb select,.fb input{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:7px 11px;color:var(--text);font-size:13px;outline:none}
+.st{font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px}
+.dv{border:none;border-top:1px solid var(--border);margin:16px 0}
+.empty{text-align:center;padding:40px 20px;color:var(--text3)}
+.spin2{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--teal);border-radius:50%;animation:sp .7s linear infinite;margin:40px auto}
+.lw{display:flex;align-items:center;justify-content:center;height:200px}
+.toast{position:fixed;bottom:22px;right:22px;background:var(--navy3);border:1px solid var(--border);border-radius:10px;padding:11px 17px;font-size:13px;z-index:2000;animation:su .2s ease;box-shadow:var(--shadow)}
+.tok{border-color:rgba(16,185,129,.4);color:#34D399}
+.ter{border-color:rgba(239,68,68,.4);color:#FCA5A5}
+.br2{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.bl2{width:80px;font-size:11.5px;color:var(--text2);text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bt{flex:1;height:7px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden}
+.bf{height:100%;border-radius:4px;transition:width .6s ease}
+.bv{width:75px;font-size:11px;color:var(--text3);flex-shrink:0}
+.tabs{display:flex;gap:3px;border-bottom:1px solid var(--border);margin-bottom:18px}
+.tab{padding:9px 16px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;margin-bottom:-1px}
+.tab.on{color:var(--teal2);border-bottom-color:var(--teal)}
+.tab:hover{color:var(--text)}
+.sel{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:13px;outline:none}
+.sel:focus{border-color:var(--teal)}
+@media(max-width:860px){.sidebar{width:54px;min-width:54px}.logo p,.ni span,.sft{display:none}.ni{justify-content:center;padding:10px}.page{padding:14px}.g2,.g3{grid-template-columns:1fr}.kg{grid-template-columns:repeat(2,1fr)}}
+`;
+
+/* ── Badges ── */
+const DocBadge = ({v}) => {
+  if(!v) return <span className="badge bgg">—</span>;
+  if(v==="COMPLETO") return <span className="badge bge">✓ Completo</span>;
+  if(v==="FALTA BL") return <span className="badge bgy">⏳ Falta BL</span>;
+  return <span className="badge bgr">⚠ Pendente</span>;
+};
+const EmbBadge = ({v}) => {
+  if(!v) return <span className="badge bgg">—</span>;
+  const m={EMBARCADO:"bgb","EM TRÂNSITO":"bgo","EM PRODUÇÃO":"bgg","AGD ESTUFAGEM":"bgy",ENTREGUE:"bge"};
+  return <span className={`badge ${m[v]||"bgg"}`}>{v}</span>;
+};
+
+/* ── Toast ── */
+const Toast = ({msg,type,onClose}) => {
+  useEffect(()=>{const t=setTimeout(onClose,3500);return()=>clearTimeout(t);},[]);
+  return <div className={`toast ${type==="ok"?"tok":"ter"}`}>{msg}</div>;
+};
+
+/* ── BarChart ── */
+const Bar = ({data,color="#0EA5E9",fmt}) => {
+  const max=Math.max(...data.map(d=>d.v),1);
+  return <div>{data.map((d,i)=>(
+    <div key={i} className="br2">
+      <div className="bl2" title={d.l}>{d.l}</div>
+      <div className="bt"><div className="bf" style={{width:`${(d.v/max)*100}%`,background:color}}/></div>
+      <div className="bv">{fmt?fmt(d.v):d.v}</div>
+    </div>
+  ))}</div>;
+};
+
+/* ── Donut ── */
+const Donut = ({data}) => {
+  const total=data.reduce((s,d)=>s+d.v,0);
+  if(!total) return null;
+  const r=38,cx=55,cy=55,circ=2*Math.PI*r;
+  const COLS=["#0EA5E9","#F59E0B","#10B981","#F97316","#8B5CF6","#EF4444","#EC4899","#14B8A6"];
+  let off=0;
+  const segs=data.map((d,i)=>{const pct=d.v/total,dash=pct*circ,seg={...d,dash,off:off*circ,c:COLS[i%COLS.length]};off+=pct;return seg;});
+  return <div style={{display:"flex",alignItems:"center",gap:16}}>
+    <svg width="110" height="110" viewBox="0 0 110 110" style={{flexShrink:0}}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,.05)" strokeWidth="14"/>
+      {segs.map((s,i)=><circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.c} strokeWidth="14"
+        strokeDasharray={`${s.dash} ${circ-s.dash}`} strokeDashoffset={circ/4-s.off}/>)}
+      <text x={cx} y={cy+5} textAnchor="middle" fill="#E2EAF4" fontSize="14" fontWeight="700" fontFamily="Syne">{total}</text>
+    </svg>
+    <div style={{display:"flex",flexDirection:"column",gap:7}}>
+      {segs.map((s,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12}}>
+        <div style={{width:9,height:9,borderRadius:"50%",background:s.c,flexShrink:0}}/>
+        <span style={{color:"var(--text2)"}}>{s.l}</span>
+        <span style={{marginLeft:"auto",fontWeight:600,paddingLeft:10}}>{s.v}</span>
+      </div>)}
+    </div>
+  </div>;
+};
+
+/* ── Icons ── */
+const IC = {
+  dash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
+  ops:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="12" y2="16"/></svg>,
+  cart: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 001.99 1.61h9.72a2 2 0 001.99-1.61L23 6H6"/></svg>,
+  db:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>,
+  rep:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
+};
+
+/* ══════════════════════════════════════════
+   MAIN APP
+══════════════════════════════════════════ */
+function App() {
+  const [pg,setPg]=useState("dash");
+  const [recs,setRecs]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [toast,setToast]=useState(null);
+  const notify=useCallback((msg,type="ok")=>setToast({msg,type}),[]);
+
+  useEffect(()=>{load();},[]);
+
+  async function load() {
+    setLoading(true);
+    const {data,error}=await db.from("exportacoes").select("*").order("invoice");
+    if(error) notify("Erro: "+error.message,"err");
+    else setRecs(data||[]);
+    setLoading(false);
+  }
+
+  async function save(rec) {
+    const {error}=await db.from("exportacoes").upsert(rec,{onConflict:"invoice"});
+    if(error){notify("Erro ao salvar: "+error.message,"err");return false;}
+    await load(); notify("Salvo!"); return true;
+  }
+
+  async function remove(invoice) {
+    const {error}=await db.from("exportacoes").delete().eq("invoice",invoice);
+    if(error){notify("Erro ao excluir","err");return;}
+    await load(); notify("Excluído.");
+  }
+
+  const NAV=[
+    {id:"dash",ic:IC.dash,lb:"Dashboard"},
+    {id:"ops", ic:IC.ops, lb:"Operacional"},
+    {id:"cart",ic:IC.cart,lb:"Carteira"},
+    {id:"base",ic:IC.db,  lb:"Base de Dados"},
+    {id:"rel", ic:IC.rep, lb:"Relatórios"},
+  ];
+
+  return <>
+    <style>{CSS}</style>
+    <div className="app">
+      <aside className="sidebar">
+        <div className="logo">
+          <h1>SALV<span>ARO</span></h1>
+          <p>Export Control</p>
+        </div>
+        <div className="nav">
+          <div className="nlbl">Navegação</div>
+          {NAV.map(n=>(
+            <div key={n.id} className={`ni${pg===n.id?" on":""}`} onClick={()=>setPg(n.id)}>
+              {n.ic}<span>{n.lb}</span>
+            </div>
+          ))}
+        </div>
+        <div className="sft">
+          <div>v2.0 · Supabase</div>
+          <div style={{color:"var(--green)",marginTop:3}}>● {recs.length} registros</div>
+        </div>
+      </aside>
+      <main className="main">
+        {loading
+          ? <div className="lw"><div className="spin2"/></div>
+          : <>
+              {pg==="dash" && <PgDash recs={recs}/>}
+              {pg==="ops"  && <PgOps  recs={recs}/>}
+              {pg==="cart" && <PgCart recs={recs}/>}
+              {pg==="base" && <PgBase recs={recs} onSave={save} onDel={remove} notify={notify}/>}
+              {pg==="rel"  && <PgRel  recs={recs}/>}
+            </>
+        }
+      </main>
+    </div>
+    {toast && <Toast msg={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
+  </>;
+}
+
+/* ══════════════════════════════════════════
+   DASHBOARD
+══════════════════════════════════════════ */
+function PgDash({recs}) {
+  const [yr,setYr]=useState("2026");
+  const fil=useMemo(()=>yr==="TODOS"?recs:recs.filter(r=>r.mes_ref?.includes(yr)),[recs,yr]);
+  const fat=fil.reduce((s,r)=>s+(r.valor_usd||0),0);
+  const fret=fil.reduce((s,r)=>s+(r.frete_usd||0),0);
+  const cnt=fil.length;
+
+  const byMonth=useMemo(()=>{
+    const m={};
+    fil.forEach(r=>{const k=r.mes_ref||"?";if(!m[k])m[k]={v:0,mes:k.split(" ")[0],ano:k.split(" ")[1]||""};m[k].v+=r.valor_usd||0;});
+    return Object.entries(m).sort(([,a],[,b])=>MESES.indexOf(a.mes)-MESES.indexOf(b.mes)).map(([,v])=>({l:v.mes.slice(0,3)+"/"+v.ano.slice(2),v:v.v}));
+  },[fil]);
+
+  const byCli=useMemo(()=>{
+    const m={};fil.forEach(r=>{const c=r.cliente||"—";m[c]=(m[c]||0)+(r.valor_usd||0);});
+    return Object.entries(m).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}));
+  },[fil]);
+
+  const byDst=useMemo(()=>{
+    const m={};fil.forEach(r=>{const d=r.destino||"—";m[d]=(m[d]||0)+1;});
+    return Object.entries(m).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}));
+  },[fil]);
+
+  const docSt=useMemo(()=>{
+    const m={COMPLETO:0,"FALTA BL":0,PENDENTE:0};
+    fil.forEach(r=>{const k=r.status_doc||"PENDENTE";m[k]=(m[k]||0)+1;});
+    return Object.entries(m).filter(([,v])=>v>0).map(([l,v])=>({l,v}));
+  },[fil]);
+
+  const annual=useMemo(()=>{
+    const m={};
+    recs.forEach(r=>{const y=r.mes_ref?.split(" ")[1];if(!y)return;if(!m[y])m[y]={fat:0,cnt:0,fret:0};m[y].fat+=r.valor_usd||0;m[y].cnt++;m[y].fret+=r.frete_usd||0;});
+    return Object.entries(m).sort().map(([ano,v])=>({ano,...v}));
+  },[recs]);
+
+  return <div className="page">
+    <div className="ph">
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div><h2>Dashboard Geral</h2><p>Visão consolidada de exportações Salvaro</p></div>
+        <select className="sel" value={yr} onChange={e=>setYr(e.target.value)}>
+          <option value="TODOS">Todos os anos</option>
+          {ANOS.map(a=><option key={a}>{a}</option>)}
+        </select>
+      </div>
+    </div>
+    <div className="kg">
+      <div className="kp hi"><div className="kl">Faturamento USD</div><div className="kv tc" style={{fontSize:20}}>{fmtUSD(fat)}</div><div className="ks">{yr}</div></div>
+      <div className="kp"><div className="kl">Containers</div><div className="kv">{cnt}</div><div className="ks">embarques</div></div>
+      <div className="kp"><div className="kl">Média / CNTR</div><div className="kv gc" style={{fontSize:20}}>{fmtUSD(cnt?fat/cnt:0)}</div></div>
+      <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(fret)}</div><div className="ks">{fat?((fret/fat)*100).toFixed(1)+"%":"—"} do fat.</div></div>
+      <div className="kp"><div className="kl">Clientes</div><div className="kv gr">{byCli.length}</div><div className="ks">no período</div></div>
+    </div>
+    <div className="g2 mb20">
+      <div className="card"><div className="ct">Faturamento por Mês</div><Bar data={byMonth} fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
+      <div className="card"><div className="ct">Faturamento por Cliente</div><Bar data={byCli} color="#F59E0B" fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
+    </div>
+    <div className="g2 mb20">
+      <div className="card"><div className="ct">Destinos (containers)</div><Donut data={byDst}/></div>
+      <div className="card"><div className="ct">Status Documentação</div><Donut data={docSt}/></div>
+    </div>
+    <div className="card">
+      <div className="ct">Histórico Anual</div>
+      <div className="tw"><table>
+        <thead><tr><th>Ano</th><th>Faturamento</th><th>Containers</th><th>Média/CNTR</th><th>Frete Total</th><th>% Frete/Fat</th></tr></thead>
+        <tbody>{annual.map(r=><tr key={r.ano}>
+          <td><strong>{r.ano}</strong></td>
+          <td className="r">{fmtUSD(r.fat)}</td><td className="r">{r.cnt}</td>
+          <td className="r">{fmtUSD(r.cnt?r.fat/r.cnt:0)}</td><td className="r">{fmtUSD(r.fret)}</td>
+          <td className="r">{r.fat?((r.fret/r.fat)*100).toFixed(1)+"%":"—"}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </div>
+  </div>;
+}
+
+/* ══════════════════════════════════════════
+   OPERACIONAL
+══════════════════════════════════════════ */
+function PgOps({recs}) {
+  const now=new Date(),ci=now.getMonth(),cy=String(now.getFullYear());
+  const pi=ci===0?11:ci-1, py=ci===0?String(now.getFullYear()-1):cy;
+  const ni=(ci+1)%12, ny=ci===11?String(now.getFullYear()+1):cy;
+  const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
+  const [ant,setAnt]=useState(MESES[pi]+" "+py);
+  const [vig,setVig]=useState(MESES[ci]+" "+cy);
+  const [seg,setSeg]=useState(MESES[ni]+" "+ny);
+
+  const Sec=({title,mes,col})=>{
+    const rows=recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
+    const tot=rows.reduce((s,r)=>s+(r.valor_usd||0),0);
+    return <div className="card mb20">
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+        <div style={{width:9,height:9,borderRadius:"50%",background:col}}/>
+        <div className="ct" style={{marginBottom:0}}>{title}</div>
+        <strong style={{fontSize:14}}>{mes}</strong>
+        <span style={{color:"var(--text2)",fontSize:12}}>— {rows.length} embarques — {fmtUSD(tot)}</span>
+      </div>
+      <div className="tw"><table>
+        <thead><tr><th>Nº</th><th>Invoice</th><th>Cliente</th><th>PO#</th><th>NF</th><th>Destino</th><th>ETA</th><th>Agente</th><th>Booking</th><th>Container</th><th>Navio</th><th>DL Carga</th><th>Estufagem</th><th>Transp.</th></tr></thead>
+        <tbody>{rows.length===0
+          ?<tr><td colSpan={14} className="empty">Nenhum embarque neste período</td></tr>
+          :rows.map((r,i)=><tr key={r.invoice}>
+            <td className="m">{r.nr||i+1}</td><td><strong>{r.invoice}</strong></td>
+            <td>{r.cliente||"—"}</td><td className="m">{r.po||"—"}</td><td>{r.nf||"—"}</td>
+            <td>{r.destino||"—"}</td><td>{fmtDate(r.eta_pedido)}</td>
+            <td>{r.agente?.split(" -")[0]||"—"}</td><td className="m">{r.booking||"—"}</td>
+            <td>{r.container||"—"}</td><td className="m">{r.navio||"—"}</td>
+            <td>{fmtDate(r.dl_carga)}</td><td>{fmtDate(r.estufagem)}</td>
+            <td className="m">{r.transportadora||"—"}</td>
+          </tr>)
+        }</tbody>
+      </table></div>
+    </div>;
+  };
+
+  return <div className="page">
+    <div className="ph"><h2>Controle Operacional</h2><p>Mês anterior, vigente e seguinte</p></div>
+    <div className="card mb20">
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
+        {[["Mês Anterior",ant,setAnt,"#F59E0B"],["Mês Vigente",vig,setVig,"#0EA5E9"],["Mês Seguinte",seg,setSeg,"#10B981"]].map(([lb,val,set,col])=>(
+          <div key={lb}>
+            <div style={{fontSize:11,fontWeight:600,color:"var(--text2)",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>{lb}</div>
+            <select className="sel" style={{width:"100%",borderColor:col+"44"}} value={val} onChange={e=>set(e.target.value)}>
+              {avail.map(m=><option key={m}>{m}</option>)}
+            </select>
+          </div>
+        ))}
+      </div>
+    </div>
+    <Sec title="MÊS ANTERIOR" mes={ant} col="#F59E0B"/>
+    <Sec title="MÊS VIGENTE"  mes={vig} col="#0EA5E9"/>
+    <Sec title="MÊS SEGUINTE" mes={seg} col="#10B981"/>
+  </div>;
+}
+
+/* ══════════════════════════════════════════
+   CARTEIRA
+══════════════════════════════════════════ */
+function PgCart({recs}) {
+  const now=new Date(),ci=now.getMonth(),cy=String(now.getFullYear());
+  const ni=(ci+1)%12, ny=ci===11?String(now.getFullYear()+1):cy;
+  const n2=(ci+2)%12, n2y=ci>=10?String(now.getFullYear()+1):cy;
+  const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
+  const [m1,setM1]=useState(MESES[ci]+" "+cy);
+  const [m2,setM2]=useState(MESES[ni]+" "+ny);
+  const [m3,setM3]=useState(MESES[n2]+" "+n2y);
+
+  const Col=({mes})=>{
+    const rows=recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
+    const total=rows.reduce((s,r)=>s+(r.valor_usd||0),0);
+    return <div className="card">
+      <div className="ct">{mes}</div>
+      <div style={{display:"flex",gap:16,marginBottom:14}}>
+        <div><div style={{fontSize:11,color:"var(--text3)"}}>Pedidos</div><div style={{fontFamily:"Syne",fontSize:22,fontWeight:700}}>{rows.length}</div></div>
+        <div><div style={{fontSize:11,color:"var(--text3)"}}>Total</div><div style={{fontFamily:"Syne",fontSize:15,fontWeight:700,color:"var(--teal2)"}}>{fmtUSD(total)}</div></div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:7}}>
+        {rows.length===0
+          ?<div style={{color:"var(--text3)",fontSize:12,textAlign:"center",padding:"18px 0"}}>Sem pedidos</div>
+          :rows.map(r=><div key={r.invoice} style={{background:"rgba(255,255,255,.03)",border:"1px solid var(--border)",borderRadius:8,padding:"9px 11px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+              <span style={{fontFamily:"Syne",fontWeight:700,fontSize:13}}>INV {r.invoice}</span>
+              <span style={{color:"var(--teal2)",fontWeight:600,fontSize:12}}>{fmtUSD(r.valor_usd)}</span>
+            </div>
+            <div style={{fontSize:11,color:"var(--text2)",display:"flex",gap:8,flexWrap:"wrap"}}>
+              <span>{r.cliente||"—"}</span><span>·</span><span>{r.destino||"—"}</span><span>·</span><span>ETA {fmtDate(r.eta_pedido)}</span>
+            </div>
+          </div>)
+        }
+      </div>
+    </div>;
+  };
+
+  return <div className="page">
+    <div className="ph"><h2>Carteira de Pedidos</h2><p>Programação de embarques e ETAs</p></div>
+    <div className="card mb20">
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
+        {[["MÊS 1",m1,setM1],["MÊS 2",m2,setM2],["MÊS 3",m3,setM3]].map(([lb,val,set])=>(
+          <div key={lb}>
+            <div style={{fontSize:11,fontWeight:600,color:"var(--text2)",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>{lb}</div>
+            <select className="sel" style={{width:"100%"}} value={val} onChange={e=>set(e.target.value)}>
+              {avail.map(m=><option key={m}>{m}</option>)}
+            </select>
+          </div>
+        ))}
+      </div>
+    </div>
+    <div className="g3"><Col mes={m1}/><Col mes={m2}/><Col mes={m3}/></div>
+  </div>;
+}
+
+/* ══════════════════════════════════════════
+   BASE DE DADOS
+══════════════════════════════════════════ */
+function PgBase({recs,onSave,onDel,notify}) {
+  const [q,setQ]=useState(""); const [fC,setFC]=useState(""); const [fM,setFM]=useState(""); const [fD,setFD]=useState("");
+  const [modal,setModal]=useState(null); const [del,setDel]=useState(null); const [saving,setSaving]=useState(false);
+  const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
+  const fil=useMemo(()=>recs.filter(r=>{
+    if(q&&!String(r.invoice).includes(q)&&!(r.cliente||"").toLowerCase().includes(q.toLowerCase())&&!(r.navio||"").toLowerCase().includes(q.toLowerCase())) return false;
+    if(fC&&r.cliente!==fC) return false;
+    if(fM&&r.mes_ref!==fM) return false;
+    if(fD&&r.status_doc!==fD) return false;
+    return true;
+  }),[recs,q,fC,fM,fD]);
+
+  const E0={invoice:"",cliente:"",po:"",nf:"",porto_carga:"IMBITUBA",destino:"",navio:"",container:"",booking:"",transportadora:"",valor_usd:"",frete_usd:"",agente:"",isf_docs:"",bl:"",status_doc:"PENDENTE",dl_carga:"",estufagem:"",eta_pedido:"",status:"",mes_ref:""};
+  const [form,setForm]=useState(E0);
+  const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  function openEdit(r){setForm({invoice:r.invoice||"",cliente:r.cliente||"",po:r.po||"",nf:r.nf||"",porto_carga:r.porto_carga||"IMBITUBA",destino:r.destino||"",navio:r.navio||"",container:r.container||"",booking:r.booking||"",transportadora:r.transportadora||"",valor_usd:r.valor_usd||"",frete_usd:r.frete_usd||"",agente:r.agente||"",isf_docs:r.isf_docs||"",bl:r.bl||"",status_doc:r.status_doc||"PENDENTE",dl_carga:r.dl_carga||"",estufagem:r.estufagem||"",eta_pedido:r.eta_pedido||"",status:r.status||"",mes_ref:r.mes_ref||""});setModal(r);}
+
+  async function hSave(){
+    if(!form.invoice){notify("Invoice obrigatório","err");return;}
+    if(!form.mes_ref){notify("Mês de referência obrigatório","err");return;}
+    setSaving(true);
+    const ok=await onSave({...form,invoice:parseInt(form.invoice),valor_usd:parseFloat(form.valor_usd)||null,frete_usd:parseFloat(form.frete_usd)||null,isf_docs:form.isf_docs||null,bl:form.bl||null,dl_carga:form.dl_carga||null,estufagem:form.estufagem||null,eta_pedido:form.eta_pedido||null});
+    setSaving(false); if(ok)setModal(null);
+  }
+
+  const F=({label,field,type="text",opts=null})=>(
+    <div className="field">
+      <label>{label}</label>
+      {opts?<select value={form[field]||""} onChange={e=>upd(field,e.target.value)}><option value="">— selecione —</option>{opts.map(o=><option key={o}>{o}</option>)}</select>
+           :<input type={type} value={form[field]||""} onChange={e=>upd(field,e.target.value)}/>}
+    </div>
+  );
+
+  return <div className="page">
+    <div className="ph">
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        <div><h2>Base de Dados</h2><p>{recs.length} registros · {fil.length} exibidos</p></div>
+        <button className="btn bp" onClick={()=>{setForm(E0);setModal("new")}}>+ Novo Embarque</button>
+      </div>
+    </div>
+    <div className="fb">
+      <input placeholder="Buscar invoice, cliente, navio..." value={q} onChange={e=>setQ(e.target.value)} style={{width:260}}/>
+      <select value={fC} onChange={e=>setFC(e.target.value)}><option value="">Todos os clientes</option>{CLIENTES.map(c=><option key={c}>{c}</option>)}</select>
+      <select value={fM} onChange={e=>setFM(e.target.value)}><option value="">Todos os meses</option>{avail.map(m=><option key={m}>{m}</option>)}</select>
+      <select value={fD} onChange={e=>setFD(e.target.value)}><option value="">Todos status doc</option>{STATUS_DOC.map(s=><option key={s}>{s}</option>)}</select>
+      <button className="btn bg2 bsm" onClick={()=>{setQ("");setFC("");setFM("");setFD("")}}>Limpar</button>
+    </div>
+    <div className="card">
+      <div className="tw"><table>
+        <thead><tr><th>Invoice</th><th>Mês Ref</th><th>Cliente</th><th>Destino</th><th>Valor USD</th><th>Frete USD</th><th>Agente</th><th>Container</th><th>ETA</th><th>Status Doc</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {fil.length===0?<tr><td colSpan={12} className="empty">Nenhum registro</td></tr>
+          :fil.map(r=><tr key={r.invoice} onClick={()=>openEdit(r)}>
+            <td><strong>{r.invoice}</strong></td><td className="m">{r.mes_ref}</td>
+            <td>{r.cliente}</td><td>{r.destino||"—"}</td>
+            <td className="r">{fmtUSD(r.valor_usd)}</td><td className="r">{fmtUSD(r.frete_usd)}</td>
+            <td className="m">{r.agente?.split(" -")[0]||"—"}</td><td className="m">{r.container||"—"}</td>
+            <td>{fmtDate(r.eta_pedido)}</td><td><DocBadge v={r.status_doc}/></td><td><EmbBadge v={r.status}/></td>
+            <td onClick={e=>{e.stopPropagation();setDel(r)}}><button className="btn bd bsm">✕</button></td>
+          </tr>)}
+        </tbody>
+      </table></div>
+    </div>
+
+    {modal&&<div className="overlay" onClick={()=>setModal(null)}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="mh"><h3>{modal==="new"?"Novo Embarque":"Editar — INV "+modal.invoice}</h3><button className="btn bg2 bsm" onClick={()=>setModal(null)}>✕</button></div>
+        <div className="mb2">
+          <div className="st">Identificação</div>
+          <div className="fr mb16"><F label="Invoice *" field="invoice" type="number"/><F label="Mês Ref *" field="mes_ref" opts={ALL_MONTHS}/><F label="Cliente" field="cliente" opts={CLIENTES}/><F label="PO#" field="po"/><F label="NF" field="nf"/></div>
+          <hr className="dv"/>
+          <div className="st">Logística</div>
+          <div className="fr mb16"><F label="Porto de Carga" field="porto_carga" opts={PORTOS}/><F label="Destino" field="destino" opts={DESTINOS}/><F label="Navio" field="navio"/><F label="Container" field="container"/><F label="Booking" field="booking"/><F label="Transportadora" field="transportadora" opts={TRANSP}/></div>
+          <hr className="dv"/>
+          <div className="st">Financeiro</div>
+          <div className="fr mb16"><F label="Valor USD" field="valor_usd" type="number"/><F label="Frete USD" field="frete_usd" type="number"/><F label="Agente" field="agente"/></div>
+          <hr className="dv"/>
+          <div className="st">Documentação e Datas</div>
+          <div className="fr"><F label="ISF/DOCS" field="isf_docs" type="date"/><F label="BL" field="bl" type="date"/><F label="Status Doc" field="status_doc" opts={STATUS_DOC}/><F label="DL Carga" field="dl_carga" type="date"/><F label="Estufagem" field="estufagem" type="date"/><F label="ETA Pedido" field="eta_pedido" type="date"/><F label="Status" field="status" opts={STATUS_EMB}/></div>
+          <div className="mac"><button className="btn bg2" onClick={()=>setModal(null)}>Cancelar</button><button className="btn bp" onClick={hSave} disabled={saving}>{saving?"Salvando...":"Salvar"}</button></div>
+        </div>
+      </div>
+    </div>}
+    {del&&<div className="overlay" onClick={()=>setDel(null)}>
+      <div className="modal" style={{maxWidth:380}} onClick={e=>e.stopPropagation()}>
+        <div className="mh"><h3>Confirmar Exclusão</h3></div>
+        <div className="mb2">
+          <p>Excluir <strong>INV {del.invoice}</strong> ({del.cliente})?</p>
+          <p style={{fontSize:12,color:"var(--text2)",marginTop:8}}>Esta ação não pode ser desfeita.</p>
+          <div className="mac"><button className="btn bg2" onClick={()=>setDel(null)}>Cancelar</button><button className="btn bd" onClick={()=>{onDel(del.invoice);setDel(null)}}>Excluir</button></div>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+/* ══════════════════════════════════════════
+   RELATÓRIOS
+══════════════════════════════════════════ */
+function PgRel({recs}) {
+  const [tab,setTab]=useState("mensal");
+  const [yr,setYr]=useState("2026");
+  const [mes,setMes]=useState("ABRIL 2026");
+  const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
+
+  const monthly=useMemo(()=>{
+    const rows=recs.filter(r=>r.mes_ref===mes);
+    const bC={},bD={};let fat=0,fret=0;
+    rows.forEach(r=>{fat+=r.valor_usd||0;fret+=r.frete_usd||0;const c=r.cliente||"—";bC[c]=(bC[c]||0)+(r.valor_usd||0);const d=r.destino||"—";bD[d]=(bD[d]||0)+1;});
+    return {rows,fat,fret,cnt:rows.length,bC,bD};
+  },[recs,mes]);
+
+  const annual=useMemo(()=>{
+    const rows=recs.filter(r=>r.mes_ref?.includes(yr));
+    const bM={};MESES.forEach(m=>{bM[m]={fat:0,cnt:0,fret:0}});
+    rows.forEach(r=>{const m=r.mes_ref?.split(" ")[0];if(m&&bM[m]){bM[m].fat+=r.valor_usd||0;bM[m].fret+=r.frete_usd||0;bM[m].cnt++;}});
+    const list=Object.entries(bM).filter(([,v])=>v.cnt>0).map(([m,v])=>({m,...v}));
+    const tot={fat:list.reduce((s,r)=>s+r.fat,0),cnt:list.reduce((s,r)=>s+r.cnt,0),fret:list.reduce((s,r)=>s+r.fret,0)};
+    return {list,tot};
+  },[recs,yr]);
+
+  function csv(data,name){if(!data.length)return;const k=Object.keys(data[0]);const c=[k.join(","),...data.map(r=>k.map(x=>JSON.stringify(r[x]??"")||"").join(","))].join("\n");const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(c);a.download=name;a.click();}
+
+  return <div className="page">
+    <div className="ph"><h2>Relatórios</h2><p>Relatórios mensais e anuais com exportação CSV</p></div>
+    <div className="tabs">
+      {[["mensal","Mensal"],["anual","Anual"],["geral","Geral"]].map(([id,lb])=>(
+        <div key={id} className={`tab${tab===id?" on":""}`} onClick={()=>setTab(id)}>{lb}</div>
+      ))}
+    </div>
+
+    {tab==="mensal"&&<>
+      <div style={{display:"flex",gap:12,marginBottom:18,alignItems:"center",flexWrap:"wrap"}}>
+        <select className="sel" value={mes} onChange={e=>setMes(e.target.value)}>{avail.map(m=><option key={m}>{m}</option>)}</select>
+        <button className="btn bgd bsm" onClick={()=>csv(monthly.rows,"relatorio_"+mes.replace(" ","_")+".csv")}>↓ Exportar CSV</button>
+      </div>
+      <div className="kg">
+        <div className="kp hi"><div className="kl">Faturamento</div><div className="kv tc" style={{fontSize:20}}>{fmtUSD(monthly.fat)}</div></div>
+        <div className="kp"><div className="kl">Containers</div><div className="kv">{monthly.cnt}</div></div>
+        <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(monthly.fret)}</div></div>
+        <div className="kp"><div className="kl">Média/CNTR</div><div className="kv gc" style={{fontSize:20}}>{fmtUSD(monthly.cnt?monthly.fat/monthly.cnt:0)}</div></div>
+      </div>
+      <div className="g2 mb20">
+        <div className="card"><div className="ct">Por Cliente</div><Bar data={Object.entries(monthly.bC).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}))} fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
+        <div className="card"><div className="ct">Por Destino</div><Donut data={Object.entries(monthly.bD).map(([l,v])=>({l,v}))}/></div>
+      </div>
+      <div className="card">
+        <div className="ct">Detalhamento — {mes}</div>
+        <div className="tw"><table>
+          <thead><tr><th>Invoice</th><th>Cliente</th><th>PO#</th><th>NF</th><th>Destino</th><th>Valor USD</th><th>Frete USD</th><th>Container</th><th>ETA</th><th>Status Doc</th></tr></thead>
+          <tbody>{monthly.rows.map(r=><tr key={r.invoice}>
+            <td><strong>{r.invoice}</strong></td><td>{r.cliente}</td><td className="m">{r.po||"—"}</td><td>{r.nf||"—"}</td>
+            <td>{r.destino||"—"}</td><td className="r">{fmtUSD(r.valor_usd)}</td><td className="r">{fmtUSD(r.frete_usd)}</td>
+            <td className="m">{r.container||"—"}</td><td>{fmtDate(r.eta_pedido)}</td><td><DocBadge v={r.status_doc}/></td>
+          </tr>)}</tbody>
+        </table></div>
+      </div>
+    </>}
+
+    {tab==="anual"&&<>
+      <div style={{display:"flex",gap:12,marginBottom:18,alignItems:"center"}}>
+        <select className="sel" value={yr} onChange={e=>setYr(e.target.value)}>{ANOS.map(a=><option key={a}>{a}</option>)}</select>
+        <button className="btn bgd bsm" onClick={()=>csv(annual.list.map(r=>({Mês:r.m,Containers:r.cnt,Faturamento:r.fat.toFixed(2),Frete:r.fret.toFixed(2)})),"anual_"+yr+".csv")}>↓ Exportar CSV</button>
+      </div>
+      <div className="kg">
+        <div className="kp hi"><div className="kl">Faturamento {yr}</div><div className="kv tc" style={{fontSize:20}}>{fmtUSD(annual.tot.fat)}</div></div>
+        <div className="kp"><div className="kl">Containers</div><div className="kv">{annual.tot.cnt}</div></div>
+        <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(annual.tot.fret)}</div></div>
+        <div className="kp"><div className="kl">Média/CNTR</div><div className="kv gc" style={{fontSize:20}}>{fmtUSD(annual.tot.cnt?annual.tot.fat/annual.tot.cnt:0)}</div></div>
+      </div>
+      <div className="card mb20"><div className="ct">Evolução Mensal</div><Bar data={annual.list.map(r=>({l:r.m.slice(0,3),v:r.fat}))} fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
+      <div className="card">
+        <div className="ct">Resumo por Mês — {yr}</div>
+        <div className="tw"><table>
+          <thead><tr><th>Mês</th><th>Containers</th><th>Faturamento</th><th>Frete</th><th>Média/CNTR</th><th>% Frete/Fat</th></tr></thead>
+          <tbody>
+            {annual.list.map(r=><tr key={r.m}>
+              <td><strong>{r.m}</strong></td><td className="r">{r.cnt}</td><td className="r">{fmtUSD(r.fat)}</td>
+              <td className="r">{fmtUSD(r.fret)}</td><td className="r">{fmtUSD(r.cnt?r.fat/r.cnt:0)}</td>
+              <td className="r">{r.fat?((r.fret/r.fat)*100).toFixed(1)+"%":"—"}</td>
+            </tr>)}
+            <tr style={{background:"rgba(14,165,233,.08)",fontWeight:700}}>
+              <td><strong>TOTAL</strong></td><td className="r">{annual.tot.cnt}</td><td className="r">{fmtUSD(annual.tot.fat)}</td>
+              <td className="r">{fmtUSD(annual.tot.fret)}</td><td className="r">{fmtUSD(annual.tot.cnt?annual.tot.fat/annual.tot.cnt:0)}</td>
+              <td className="r">{annual.tot.fat?((annual.tot.fret/annual.tot.fat)*100).toFixed(1)+"%":"—"}</td>
+            </tr>
+          </tbody>
+        </table></div>
+      </div>
+    </>}
+
+    {tab==="geral"&&<>
+      <div style={{marginBottom:18}}><button className="btn bgd bsm" onClick={()=>csv(recs,"exportacoes_completo.csv")}>↓ Exportar Todos os Dados</button></div>
+      <div className="g2 mb20">
+        <div className="card"><div className="ct">Faturamento por Ano</div>
+          <Bar data={Object.entries(recs.reduce((a,r)=>{const y=r.mes_ref?.split(" ")[1];if(y)a[y]=(a[y]||0)+(r.valor_usd||0);return a},{})).sort().map(([l,v])=>({l,v}))} color="#F59E0B" fmt={v=>"$"+Math.round(v/1000)+"k"}/>
+        </div>
+        <div className="card"><div className="ct">Containers por Ano</div>
+          <Bar data={Object.entries(recs.reduce((a,r)=>{const y=r.mes_ref?.split(" ")[1];if(y)a[y]=(a[y]||0)+1;return a},{})).sort().map(([l,v])=>({l,v}))} color="#10B981"/>
+        </div>
+      </div>
+      <div className="card"><div className="ct">Participação por Cliente (todos os anos)</div>
+        <Bar data={Object.entries(recs.reduce((a,r)=>{const c=r.cliente||"—";a[c]=(a[c]||0)+(r.valor_usd||0);return a},{})).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}))} color="#8B5CF6" fmt={v=>"$"+Math.round(v/1000)+"k"}/>
+      </div>
+    </>}
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
