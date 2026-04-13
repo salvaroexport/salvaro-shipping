@@ -8,29 +8,30 @@
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html,body,#root{height:100%;font-family:"DM Sans",sans-serif}
-body{background:#0F1C2E;color:#E2EAF4}
+body{background:#F0F2F5;color:#1A2B3C}
 :root{
-  --navy:#0F1C2E;--navy2:#162435;--navy3:#1E3048;
-  --teal:#0EA5E9;--teal2:#38BDF8;--gold:#F59E0B;
-  --green:#10B981;--red:#EF4444;--orange:#F97316;
-  --text:#E2EAF4;--text2:#8BA3BF;--text3:#4D6680;
-  --border:rgba(14,165,233,0.15);--card:rgba(22,36,53,0.9);
-  --radius:12px;--shadow:0 4px 24px rgba(0,0,0,0.4)
+  --bg:#F0F2F5;--bg2:#FFFFFF;--bg3:#F7F8FA;
+  --blue:#1A6DC8;--blue2:#2B85E8;--blue3:#E8F1FB;
+  --gold:#D97706;--green:#059669;--red:#DC2626;--orange:#EA580C;
+  --text:#1A2B3C;--text2:#5A7288;--text3:#94A8BA;
+  --border:#D8E2EB;--card:#FFFFFF;
+  --radius:10px;--shadow:0 1px 4px rgba(0,0,0,0.08),0 4px 16px rgba(0,0,0,0.04)
 }
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes sp{to{transform:rotate(360deg)}}
-@keyframes su{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+@keyframes su{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
 </style>
 </head>
 <body>
 <div id="root">
-  <div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Syne,sans-serif;color:#38BDF8;font-size:18px;gap:12px">
-    <div style="width:24px;height:24px;border:3px solid rgba(14,165,233,0.3);border-top-color:#38BDF8;border-radius:50%;animation:spin .7s linear infinite"></div>
+  <div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Syne,sans-serif;color:#1A6DC8;font-size:17px;gap:12px">
+    <div style="width:22px;height:22px;border:3px solid #D8E2EB;border-top-color:#1A6DC8;border-radius:50%;animation:spin .7s linear infinite"></div>
     Carregando...
   </div>
 </div>
@@ -52,97 +53,129 @@ const MESES      = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO
 const ANOS       = ["2025","2026","2027"];
 const ALL_MONTHS = ANOS.flatMap(a => MESES.map(m => m + " " + a));
 
+/* Dados históricos 2018-2024 (do Resumo Anual da planilha) */
+const HIST = {
+  "2018":{fat:4629070.27,cnt:155,fret:322595},
+  "2019":{fat:4914200.65,cnt:150,fret:247013.35},
+  "2020":{fat:5801294.74,cnt:178,fret:285768},
+  "2021":{fat:9696679.11,cnt:198,fret:939180},
+  "2022":{fat:12834119.61,cnt:189,fret:1857732},
+  "2023":{fat:5681213.56,cnt:138,fret:283080},
+  "2024":{fat:7412739.41,cnt:189,fret:636151.2},
+};
+
 const fmtUSD = v => (!v && v!==0) ? "—" : new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2}).format(v);
 const fmtDate = d => { if(!d) return "—"; const dt=new Date(d+"T00:00:00"); return isNaN(dt)?"—":dt.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"}); };
 
+/* Excel export utility */
+function exportXLS(rows, cols, filename, sheetTitle) {
+  const header = cols.map(c=>c.label);
+  const data = rows.map(r => cols.map(c => {
+    const v = c.val(r);
+    return v ?? "";
+  }));
+  const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+  /* column widths */
+  ws["!cols"] = cols.map(c=>({wch: c.w||16}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetTitle||"Dados");
+  XLSX.writeFile(wb, filename);
+}
+
 const CSS = `
 .app{display:flex;height:100vh;overflow:hidden}
-.sidebar{width:220px;min-width:220px;background:var(--navy2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
-.logo{padding:22px 20px 14px;border-bottom:1px solid var(--border)}
-.logo h1{font-family:Syne,sans-serif;font-size:20px;font-weight:800;letter-spacing:-0.5px;line-height:1}
-.logo span{color:var(--teal)}
-.logo p{font-size:11px;color:var(--text2);margin-top:4px;letter-spacing:.5px;text-transform:uppercase}
+.sidebar{width:220px;min-width:220px;background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;box-shadow:1px 0 0 var(--border)}
+.logo{padding:20px 20px 14px;border-bottom:1px solid var(--border)}
+.logo h1{font-family:Syne,sans-serif;font-size:20px;font-weight:800;letter-spacing:-0.5px;line-height:1;color:var(--text)}
+.logo span{color:var(--blue)}
+.logo p{font-size:10.5px;color:var(--text3);margin-top:4px;letter-spacing:.8px;text-transform:uppercase}
 .nav{padding:14px 12px 8px}
 .nlbl{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:1px;text-transform:uppercase;padding:0 8px;margin-bottom:6px}
-.ni{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .15s;border:1px solid transparent;margin-bottom:2px}
-.ni:hover{background:rgba(255,255,255,.04);color:var(--text)}
-.ni.on{background:rgba(14,165,233,.12);color:var(--teal2);border-color:rgba(14,165,233,.2)}
+.ni{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .15s;margin-bottom:2px}
+.ni:hover{background:var(--bg3);color:var(--text)}
+.ni.on{background:var(--blue3);color:var(--blue);font-weight:600}
 .ni svg{width:16px;height:16px;flex-shrink:0}
 .sft{margin-top:auto;padding:14px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)}
-.main{flex:1;overflow-y:auto}
-.page{padding:26px 30px;max-width:1600px}
-.ph{margin-bottom:22px}
-.ph h2{font-family:Syne,sans-serif;font-size:24px;font-weight:700;letter-spacing:-.5px}
-.ph p{color:var(--text2);font-size:13px;margin-top:4px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
-.ct{font-family:Syne,sans-serif;font-size:12px;font-weight:600;color:var(--text2);letter-spacing:.5px;text-transform:uppercase;margin-bottom:12px}
-.kg{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px;margin-bottom:20px}
-.kp{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
-.kp.hi{border-color:rgba(14,165,233,.35);background:linear-gradient(135deg,rgba(14,165,233,.08),var(--card))}
-.kl{font-size:10.5px;font-weight:600;color:var(--text3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px}
-.kv{font-family:Syne,sans-serif;font-size:26px;font-weight:700;line-height:1}
-.kv.tc{color:var(--teal2)}.kv.gc{color:var(--gold)}.kv.gr{color:var(--green)}
+.main{flex:1;overflow-y:auto;background:var(--bg)}
+.page{padding:24px 28px;max-width:1600px}
+.ph{margin-bottom:20px}
+.ph h2{font-family:Syne,sans-serif;font-size:22px;font-weight:700;letter-spacing:-.3px;color:var(--text)}
+.ph p{color:var(--text2);font-size:13px;margin-top:3px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+.ct{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.7px;text-transform:uppercase;margin-bottom:12px}
+.kg{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:18px}
+.kp{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+.kp.hi{border-left:3px solid var(--blue);background:linear-gradient(135deg,#EBF4FE,#fff)}
+.kl{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:7px}
+.kv{font-family:Syne,sans-serif;font-size:24px;font-weight:700;line-height:1;color:var(--text)}
+.kv.tc{color:var(--blue)}.kv.gc{color:var(--gold)}.kv.gr{color:var(--green)}
 .ks{font-size:11px;color:var(--text3);margin-top:5px}
-.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
-.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .mb16{margin-bottom:16px}.mb20{margin-bottom:20px}
 .tw{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
-thead tr{background:rgba(14,165,233,.08);border-bottom:1px solid var(--border)}
-th{padding:9px 13px;text-align:left;font-size:10px;font-weight:600;color:var(--text2);letter-spacing:.7px;text-transform:uppercase;white-space:nowrap}
-tbody tr{border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s;cursor:pointer}
+thead tr{background:#F4F7FA;border-bottom:1px solid var(--border)}
+th{padding:9px 13px;text-align:left;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.7px;text-transform:uppercase;white-space:nowrap}
+tbody tr{border-bottom:1px solid #EEF2F6;transition:background .1s;cursor:pointer}
 tbody tr:last-child{border-bottom:none}
-tbody tr:hover{background:rgba(14,165,233,.05)}
+tbody tr:hover{background:#F4F8FF}
 td{padding:8px 13px;color:var(--text);white-space:nowrap}
 td.m{color:var(--text2)} td.r{text-align:right;font-variant-numeric:tabular-nums}
 .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;letter-spacing:.3px}
-.bge{background:rgba(16,185,129,.15);color:#34D399;border:1px solid rgba(16,185,129,.25)}
-.bgy{background:rgba(245,158,11,.15);color:#FCD34D;border:1px solid rgba(245,158,11,.25)}
-.bgr{background:rgba(239,68,68,.15);color:#FCA5A5;border:1px solid rgba(239,68,68,.25)}
-.bgb{background:rgba(14,165,233,.15);color:#7DD3FC;border:1px solid rgba(14,165,233,.25)}
-.bgo{background:rgba(249,115,22,.15);color:#FDBA74;border:1px solid rgba(249,115,22,.25)}
-.bgg{background:rgba(255,255,255,.07);color:var(--text2);border:1px solid rgba(255,255,255,.1)}
+.bge{background:#D1FAE5;color:#065F46;border:1px solid #A7F3D0}
+.bgy{background:#FEF3C7;color:#92400E;border:1px solid #FDE68A}
+.bgr{background:#FEE2E2;color:#991B1B;border:1px solid #FECACA}
+.bgb{background:#DBEAFE;color:#1E40AF;border:1px solid #BFDBFE}
+.bgo{background:#FFEDD5;color:#9A3412;border:1px solid #FED7AA}
+.bgg{background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB}
 .field{display:flex;flex-direction:column;gap:5px}
 .field label{font-size:10.5px;font-weight:600;color:var(--text2);letter-spacing:.5px;text-transform:uppercase}
-.field input,.field select{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-family:"DM Sans",sans-serif;font-size:13px;outline:none;transition:border-color .15s;width:100%}
-.field input:focus,.field select:focus{border-color:var(--teal);background:rgba(14,165,233,.06)}
-.field select option{background:var(--navy2)}
-.field input[type=date]{color-scheme:dark}
+.field input,.field select{background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 11px;color:var(--text);font-family:"DM Sans",sans-serif;font-size:13px;outline:none;transition:border-color .15s;width:100%}
+.field input:focus,.field select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(26,109,200,.1)}
 .fr{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:13px}
-.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 17px;border-radius:8px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
-.bp{background:var(--teal);color:#fff}.bp:hover{background:var(--teal2)}
-.bg2{background:transparent;color:var(--text2);border:1px solid var(--border)}.bg2:hover{background:rgba(255,255,255,.04);color:var(--text)}
-.bd{background:rgba(239,68,68,.15);color:#FCA5A5;border:1px solid rgba(239,68,68,.25)}.bd:hover{background:rgba(239,68,68,.25)}
-.bgd{background:var(--gold);color:#000}.bgd:hover{background:#FCD34D}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-family:"DM Sans",sans-serif;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.bp{background:var(--blue);color:#fff}.bp:hover{background:var(--blue2)}
+.bg2{background:#fff;color:var(--text2);border:1px solid var(--border)}.bg2:hover{background:var(--bg3);color:var(--text)}
+.bd{background:#FEE2E2;color:#991B1B;border:1px solid #FECACA}.bd:hover{background:#FECACA}
+.bgd{background:#D97706;color:#fff}.bgd:hover{background:#B45309}
+.bgx{background:#059669;color:#fff}.bgx:hover{background:#047857}
 .bsm{padding:5px 11px;font-size:12px}
-.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
-.modal{background:var(--navy2);border:1px solid var(--border);border-radius:16px;width:100%;max-width:860px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,.6);animation:su .2s ease}
-.mh{padding:22px 26px 0;display:flex;align-items:center;justify-content:space-between}
-.mh h3{font-family:Syne,sans-serif;font-size:19px;font-weight:700}
-.mb2{padding:18px 26px 26px}
-.mac{display:flex;gap:10px;justify-content:flex-end;margin-top:22px;padding-top:18px;border-top:1px solid var(--border)}
+.overlay{position:fixed;inset:0;background:rgba(15,25,40,.55);backdrop-filter:blur(4px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:#fff;border:1px solid var(--border);border-radius:14px;width:100%;max-width:860px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.18);animation:su .2s ease}
+.mh{padding:20px 24px 0;display:flex;align-items:center;justify-content:space-between}
+.mh h3{font-family:Syne,sans-serif;font-size:18px;font-weight:700;color:var(--text)}
+.mb2{padding:16px 24px 24px}
+.mac{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
 .fb{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
-.fb select,.fb input{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:7px 11px;color:var(--text);font-size:13px;outline:none}
-.st{font-family:Syne,sans-serif;font-size:14px;font-weight:700;color:var(--text);margin-bottom:12px}
-.dv{border:none;border-top:1px solid var(--border);margin:16px 0}
-.empty{text-align:center;padding:40px 20px;color:var(--text3)}
-.spin2{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--teal);border-radius:50%;animation:sp .7s linear infinite;margin:40px auto}
+.fb select,.fb input{background:#fff;border:1px solid var(--border);border-radius:8px;padding:7px 11px;color:var(--text);font-size:13px;outline:none}
+.st{font-family:Syne,sans-serif;font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px}
+.dv{border:none;border-top:1px solid var(--border);margin:14px 0}
+.empty{text-align:center;padding:36px 20px;color:var(--text3)}
+.spin2{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;margin:40px auto}
 .lw{display:flex;align-items:center;justify-content:center;height:200px}
-.toast{position:fixed;bottom:22px;right:22px;background:var(--navy3);border:1px solid var(--border);border-radius:10px;padding:11px 17px;font-size:13px;z-index:2000;animation:su .2s ease;box-shadow:var(--shadow)}
-.tok{border-color:rgba(16,185,129,.4);color:#34D399}
-.ter{border-color:rgba(239,68,68,.4);color:#FCA5A5}
-.br2{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.toast{position:fixed;bottom:20px;right:20px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:11px 16px;font-size:13px;z-index:2000;animation:su .2s ease;box-shadow:0 4px 20px rgba(0,0,0,0.12)}
+.tok{border-left:3px solid #059669;color:#065F46}
+.ter{border-left:3px solid #DC2626;color:#991B1B}
+.br2{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .bl2{width:80px;font-size:11.5px;color:var(--text2);text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bt{flex:1;height:7px;background:rgba(255,255,255,.06);border-radius:4px;overflow:hidden}
-.bf{height:100%;border-radius:4px;transition:width .6s ease}
+.bt{flex:1;height:6px;background:#EEF2F6;border-radius:3px;overflow:hidden}
+.bf{height:100%;border-radius:3px;transition:width .6s ease}
 .bv{width:75px;font-size:11px;color:var(--text3);flex-shrink:0}
-.tabs{display:flex;gap:3px;border-bottom:1px solid var(--border);margin-bottom:18px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px}
 .tab{padding:9px 16px;font-size:13px;font-weight:500;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;margin-bottom:-1px}
-.tab.on{color:var(--teal2);border-bottom-color:var(--teal)}
+.tab.on{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
 .tab:hover{color:var(--text)}
-.sel{background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:8px;padding:9px 13px;color:var(--text);font-size:13px;outline:none}
-.sel:focus{border-color:var(--teal)}
-@media(max-width:860px){.sidebar{width:54px;min-width:54px}.logo p,.ni span,.sft{display:none}.ni{justify-content:center;padding:10px}.page{padding:14px}.g2,.g3{grid-template-columns:1fr}.kg{grid-template-columns:repeat(2,1fr)}}
+.sel{background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;outline:none}
+.sel:focus{border-color:var(--blue)}
+/* carteira compact table */
+.cart-table{width:100%;border-collapse:collapse;font-size:12px}
+.cart-table thead tr{background:#F4F7FA;border-bottom:1px solid var(--border)}
+.cart-table th{padding:7px 10px;text-align:left;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.6px;text-transform:uppercase;white-space:nowrap}
+.cart-table tbody tr{border-bottom:1px solid #EEF2F6}
+.cart-table tbody tr:hover{background:#F4F8FF}
+.cart-table td{padding:6px 10px;color:var(--text);white-space:nowrap}
+@media(max-width:860px){.sidebar{width:52px;min-width:52px}.logo p,.ni span,.sft{display:none}.ni{justify-content:center;padding:10px}.page{padding:14px}.g2,.g3{grid-template-columns:1fr}.kg{grid-template-columns:repeat(2,1fr)}}
 `;
 
 /* ── Badges ── */
@@ -158,14 +191,12 @@ const EmbBadge = ({v}) => {
   return <span className={`badge ${m[v]||"bgg"}`}>{v}</span>;
 };
 
-/* ── Toast ── */
 const Toast = ({msg,type,onClose}) => {
   useEffect(()=>{const t=setTimeout(onClose,3500);return()=>clearTimeout(t);},[]);
   return <div className={`toast ${type==="ok"?"tok":"ter"}`}>{msg}</div>;
 };
 
-/* ── BarChart ── */
-const Bar = ({data,color="#0EA5E9",fmt}) => {
+const Bar = ({data,color="#1A6DC8",fmt}) => {
   const max=Math.max(...data.map(d=>d.v),1);
   return <div>{data.map((d,i)=>(
     <div key={i} className="br2">
@@ -176,32 +207,30 @@ const Bar = ({data,color="#0EA5E9",fmt}) => {
   ))}</div>;
 };
 
-/* ── Donut ── */
 const Donut = ({data}) => {
   const total=data.reduce((s,d)=>s+d.v,0);
   if(!total) return null;
   const r=38,cx=55,cy=55,circ=2*Math.PI*r;
-  const COLS=["#0EA5E9","#F59E0B","#10B981","#F97316","#8B5CF6","#EF4444","#EC4899","#14B8A6"];
+  const COLS=["#1A6DC8","#D97706","#059669","#EA580C","#7C3AED","#DC2626","#DB2777","#0891B2"];
   let off=0;
   const segs=data.map((d,i)=>{const pct=d.v/total,dash=pct*circ,seg={...d,dash,off:off*circ,c:COLS[i%COLS.length]};off+=pct;return seg;});
   return <div style={{display:"flex",alignItems:"center",gap:16}}>
     <svg width="110" height="110" viewBox="0 0 110 110" style={{flexShrink:0}}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,.05)" strokeWidth="14"/>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#EEF2F6" strokeWidth="14"/>
       {segs.map((s,i)=><circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.c} strokeWidth="14"
         strokeDasharray={`${s.dash} ${circ-s.dash}`} strokeDashoffset={circ/4-s.off}/>)}
-      <text x={cx} y={cy+5} textAnchor="middle" fill="#E2EAF4" fontSize="14" fontWeight="700" fontFamily="Syne">{total}</text>
+      <text x={cx} y={cy+5} textAnchor="middle" fill="#1A2B3C" fontSize="14" fontWeight="700" fontFamily="Syne">{total}</text>
     </svg>
     <div style={{display:"flex",flexDirection:"column",gap:7}}>
       {segs.map((s,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12}}>
         <div style={{width:9,height:9,borderRadius:"50%",background:s.c,flexShrink:0}}/>
-        <span style={{color:"var(--text2)"}}>{s.l}</span>
-        <span style={{marginLeft:"auto",fontWeight:600,paddingLeft:10}}>{s.v}</span>
+        <span style={{color:"#5A7288"}}>{s.l}</span>
+        <span style={{marginLeft:"auto",fontWeight:600,paddingLeft:10,color:"#1A2B3C"}}>{s.v}</span>
       </div>)}
     </div>
   </div>;
 };
 
-/* ── Icons ── */
 const IC = {
   dash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
   ops:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="12" y2="16"/></svg>,
@@ -233,7 +262,7 @@ function App() {
   async function save(rec) {
     const {error}=await db.from("exportacoes").upsert(rec,{onConflict:"invoice"});
     if(error){notify("Erro ao salvar: "+error.message,"err");return false;}
-    await load(); notify("Salvo!"); return true;
+    await load(); notify("Salvo com sucesso!"); return true;
   }
 
   async function remove(invoice) {
@@ -267,7 +296,7 @@ function App() {
           ))}
         </div>
         <div className="sft">
-          <div>v2.0 · Supabase</div>
+          <div>v2.1 · Supabase</div>
           <div style={{color:"var(--green)",marginTop:3}}>● {recs.length} registros</div>
         </div>
       </aside>
@@ -293,6 +322,18 @@ function App() {
 ══════════════════════════════════════════ */
 function PgDash({recs}) {
   const [yr,setYr]=useState("2026");
+
+  /* merge live data with historical */
+  const allYears = useMemo(()=>{
+    const m={...HIST};
+    recs.forEach(r=>{
+      const y=r.mes_ref?.split(" ")[1]; if(!y) return;
+      if(!m[y]) m[y]={fat:0,cnt:0,fret:0};
+      m[y].fat+=r.valor_usd||0; m[y].cnt++; m[y].fret+=r.frete_usd||0;
+    });
+    return m;
+  },[recs]);
+
   const fil=useMemo(()=>yr==="TODOS"?recs:recs.filter(r=>r.mes_ref?.includes(yr)),[recs,yr]);
   const fat=fil.reduce((s,r)=>s+(r.valor_usd||0),0);
   const fret=fil.reduce((s,r)=>s+(r.frete_usd||0),0);
@@ -320,11 +361,16 @@ function PgDash({recs}) {
     return Object.entries(m).filter(([,v])=>v>0).map(([l,v])=>({l,v}));
   },[fil]);
 
+  /* annual table with historical + live data */
   const annual=useMemo(()=>{
-    const m={};
-    recs.forEach(r=>{const y=r.mes_ref?.split(" ")[1];if(!y)return;if(!m[y])m[y]={fat:0,cnt:0,fret:0};m[y].fat+=r.valor_usd||0;m[y].cnt++;m[y].fret+=r.frete_usd||0;});
-    return Object.entries(m).sort().map(([ano,v])=>({ano,...v}));
+    return Object.entries(allYears).sort().map(([ano,v])=>({ano,...v}));
+  },[allYears]);
+
+  /* years available for filter */
+  const liveYears=useMemo(()=>{
+    const s=new Set(); recs.forEach(r=>{const y=r.mes_ref?.split(" ")[1];if(y)s.add(y);}); return [...s];
   },[recs]);
+  const allYearKeys=[...new Set([...Object.keys(HIST),...liveYears])].sort();
 
   return <div className="page">
     <div className="ph">
@@ -332,7 +378,7 @@ function PgDash({recs}) {
         <div><h2>Dashboard Geral</h2><p>Visão consolidada de exportações Salvaro</p></div>
         <select className="sel" value={yr} onChange={e=>setYr(e.target.value)}>
           <option value="TODOS">Todos os anos</option>
-          {ANOS.map(a=><option key={a}>{a}</option>)}
+          {allYearKeys.map(a=><option key={a}>{a}</option>)}
         </select>
       </div>
     </div>
@@ -345,22 +391,24 @@ function PgDash({recs}) {
     </div>
     <div className="g2 mb20">
       <div className="card"><div className="ct">Faturamento por Mês</div><Bar data={byMonth} fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
-      <div className="card"><div className="ct">Faturamento por Cliente</div><Bar data={byCli} color="#F59E0B" fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
+      <div className="card"><div className="ct">Faturamento por Cliente</div><Bar data={byCli} color="#D97706" fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
     </div>
     <div className="g2 mb20">
       <div className="card"><div className="ct">Destinos (containers)</div><Donut data={byDst}/></div>
       <div className="card"><div className="ct">Status Documentação</div><Donut data={docSt}/></div>
     </div>
     <div className="card">
-      <div className="ct">Histórico Anual</div>
+      <div className="ct">Histórico Anual (2018 – presente)</div>
       <div className="tw"><table>
         <thead><tr><th>Ano</th><th>Faturamento</th><th>Containers</th><th>Média/CNTR</th><th>Frete Total</th><th>% Frete/Fat</th></tr></thead>
-        <tbody>{annual.map(r=><tr key={r.ano}>
-          <td><strong>{r.ano}</strong></td>
-          <td className="r">{fmtUSD(r.fat)}</td><td className="r">{r.cnt}</td>
-          <td className="r">{fmtUSD(r.cnt?r.fat/r.cnt:0)}</td><td className="r">{fmtUSD(r.fret)}</td>
-          <td className="r">{r.fat?((r.fret/r.fat)*100).toFixed(1)+"%":"—"}</td>
-        </tr>)}</tbody>
+        <tbody>{annual.map(r=>(
+          <tr key={r.ano} style={r.ano>="2025"?{fontWeight:500}:{}}>
+            <td><strong>{r.ano}</strong>{r.ano<"2025"&&<span style={{fontSize:10,color:"#94A8BA",marginLeft:6}}>hist.</span>}</td>
+            <td className="r">{fmtUSD(r.fat)}</td><td className="r">{r.cnt}</td>
+            <td className="r">{fmtUSD(r.cnt?r.fat/r.cnt:0)}</td><td className="r">{fmtUSD(r.fret)}</td>
+            <td className="r">{r.fat?((r.fret/r.fat)*100).toFixed(1)+"%":"—"}</td>
+          </tr>
+        ))}</tbody>
       </table></div>
     </div>
   </div>;
@@ -378,15 +426,43 @@ function PgOps({recs}) {
   const [vig,setVig]=useState(MESES[ci]+" "+cy);
   const [seg,setSeg]=useState(MESES[ni]+" "+ny);
 
+  const OPS_COLS = [
+    {label:"Nº",        val:r=>r.nr,            w:5},
+    {label:"Invoice",   val:r=>r.invoice,       w:10},
+    {label:"Cliente",   val:r=>r.cliente,       w:14},
+    {label:"PO#",       val:r=>r.po,            w:14},
+    {label:"NF",        val:r=>r.nf,            w:10},
+    {label:"Destino",   val:r=>r.destino,       w:16},
+    {label:"ETA",       val:r=>r.eta_pedido,    w:12},
+    {label:"Agente",    val:r=>r.agente,        w:22},
+    {label:"Booking",   val:r=>r.booking,       w:16},
+    {label:"Container", val:r=>r.container,     w:16},
+    {label:"Navio",     val:r=>r.navio,         w:20},
+    {label:"DL Carga",  val:r=>r.dl_carga,      w:12},
+    {label:"Estufagem", val:r=>r.estufagem,     w:12},
+    {label:"Transp.",   val:r=>r.transportadora,w:12},
+  ];
+
+  function exportOps(mes, label) {
+    const rows = recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
+    exportXLS(rows, OPS_COLS, `Operacional_${mes.replace(" ","_")}.xlsx`, label.slice(0,8));
+  }
+
   const Sec=({title,mes,col})=>{
     const rows=recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
     const tot=rows.reduce((s,r)=>s+(r.valor_usd||0),0);
     return <div className="card mb20">
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-        <div style={{width:9,height:9,borderRadius:"50%",background:col}}/>
-        <div className="ct" style={{marginBottom:0}}>{title}</div>
-        <strong style={{fontSize:14}}>{mes}</strong>
-        <span style={{color:"var(--text2)",fontSize:12}}>— {rows.length} embarques — {fmtUSD(tot)}</span>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{width:9,height:9,borderRadius:"50%",background:col}}/>
+          <span className="ct" style={{marginBottom:0}}>{title}</span>
+          <strong style={{fontSize:14,color:"var(--text)"}}>{mes}</strong>
+          <span style={{color:"var(--text2)",fontSize:12}}>— {rows.length} embarques — {fmtUSD(tot)}</span>
+        </div>
+        <button className="btn bgx bsm" onClick={()=>exportOps(mes,title)}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Excel
+        </button>
       </div>
       <div className="tw"><table>
         <thead><tr><th>Nº</th><th>Invoice</th><th>Cliente</th><th>PO#</th><th>NF</th><th>Destino</th><th>ETA</th><th>Agente</th><th>Booking</th><th>Container</th><th>Navio</th><th>DL Carga</th><th>Estufagem</th><th>Transp.</th></tr></thead>
@@ -410,24 +486,24 @@ function PgOps({recs}) {
     <div className="ph"><h2>Controle Operacional</h2><p>Mês anterior, vigente e seguinte</p></div>
     <div className="card mb20">
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
-        {[["Mês Anterior",ant,setAnt,"#F59E0B"],["Mês Vigente",vig,setVig,"#0EA5E9"],["Mês Seguinte",seg,setSeg,"#10B981"]].map(([lb,val,set,col])=>(
+        {[["Mês Anterior",ant,setAnt,"#D97706"],["Mês Vigente",vig,setVig,"#1A6DC8"],["Mês Seguinte",seg,setSeg,"#059669"]].map(([lb,val,set,col])=>(
           <div key={lb}>
             <div style={{fontSize:11,fontWeight:600,color:"var(--text2)",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>{lb}</div>
-            <select className="sel" style={{width:"100%",borderColor:col+"44"}} value={val} onChange={e=>set(e.target.value)}>
+            <select className="sel" style={{width:"100%",borderColor:col+"66"}} value={val} onChange={e=>set(e.target.value)}>
               {avail.map(m=><option key={m}>{m}</option>)}
             </select>
           </div>
         ))}
       </div>
     </div>
-    <Sec title="MÊS ANTERIOR" mes={ant} col="#F59E0B"/>
-    <Sec title="MÊS VIGENTE"  mes={vig} col="#0EA5E9"/>
-    <Sec title="MÊS SEGUINTE" mes={seg} col="#10B981"/>
+    <Sec title="MÊS ANTERIOR" mes={ant} col="#D97706"/>
+    <Sec title="MÊS VIGENTE"  mes={vig} col="#1A6DC8"/>
+    <Sec title="MÊS SEGUINTE" mes={seg} col="#059669"/>
   </div>;
 }
 
 /* ══════════════════════════════════════════
-   CARTEIRA
+   CARTEIRA — compact table layout
 ══════════════════════════════════════════ */
 function PgCart({recs}) {
   const now=new Date(),ci=now.getMonth(),cy=String(now.getFullYear());
@@ -438,47 +514,99 @@ function PgCart({recs}) {
   const [m2,setM2]=useState(MESES[ni]+" "+ny);
   const [m3,setM3]=useState(MESES[n2]+" "+n2y);
 
-  const Col=({mes})=>{
-    const rows=recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
-    const total=rows.reduce((s,r)=>s+(r.valor_usd||0),0);
+  const CART_COLS = [
+    {label:"Invoice",   val:r=>r.invoice,    w:10},
+    {label:"Cliente",   val:r=>r.cliente,    w:14},
+    {label:"PO#",       val:r=>r.po,         w:14},
+    {label:"NF",        val:r=>r.nf,         w:10},
+    {label:"Destino",   val:r=>r.destino,    w:16},
+    {label:"Valor USD", val:r=>r.valor_usd,  w:14},
+    {label:"ETA",       val:r=>r.eta_pedido, w:12},
+    {label:"Status",    val:r=>r.status,     w:16},
+    {label:"Mês Ref",   val:r=>r.mes_ref,    w:14},
+  ];
+
+  function exportCart(meses) {
+    const rows = recs.filter(r=>meses.includes(r.mes_ref)).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
+    exportXLS(rows, CART_COLS, `Carteira_${meses[0].replace(" ","_")}.xlsx`, "Carteira");
+  }
+
+  const MesTable = ({mes, color}) => {
+    const rows = recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
+    const total = rows.reduce((s,r)=>s+(r.valor_usd||0),0);
     return <div className="card">
-      <div className="ct">{mes}</div>
-      <div style={{display:"flex",gap:16,marginBottom:14}}>
-        <div><div style={{fontSize:11,color:"var(--text3)"}}>Pedidos</div><div style={{fontFamily:"Syne",fontSize:22,fontWeight:700}}>{rows.length}</div></div>
-        <div><div style={{fontSize:11,color:"var(--text3)"}}>Total</div><div style={{fontFamily:"Syne",fontSize:15,fontWeight:700,color:"var(--teal2)"}}>{fmtUSD(total)}</div></div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{width:10,height:10,borderRadius:"50%",background:color,flexShrink:0}}/>
+          <strong style={{fontSize:14,color:"var(--text)"}}>{mes}</strong>
+        </div>
+        <button className="btn bgx bsm" onClick={()=>exportCart([mes])}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Excel
+        </button>
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:7}}>
-        {rows.length===0
-          ?<div style={{color:"var(--text3)",fontSize:12,textAlign:"center",padding:"18px 0"}}>Sem pedidos</div>
-          :rows.map(r=><div key={r.invoice} style={{background:"rgba(255,255,255,.03)",border:"1px solid var(--border)",borderRadius:8,padding:"9px 11px"}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-              <span style={{fontFamily:"Syne",fontWeight:700,fontSize:13}}>INV {r.invoice}</span>
-              <span style={{color:"var(--teal2)",fontWeight:600,fontSize:12}}>{fmtUSD(r.valor_usd)}</span>
-            </div>
-            <div style={{fontSize:11,color:"var(--text2)",display:"flex",gap:8,flexWrap:"wrap"}}>
-              <span>{r.cliente||"—"}</span><span>·</span><span>{r.destino||"—"}</span><span>·</span><span>ETA {fmtDate(r.eta_pedido)}</span>
-            </div>
-          </div>)
-        }
+      <div style={{display:"flex",gap:20,marginBottom:10,paddingBottom:10,borderBottom:"1px solid var(--border)"}}>
+        <div>
+          <div style={{fontSize:10,color:"var(--text3)",fontWeight:600,letterSpacing:.5,textTransform:"uppercase"}}>Pedidos</div>
+          <div style={{fontFamily:"Syne",fontSize:20,fontWeight:700,color:"var(--text)"}}>{rows.length}</div>
+        </div>
+        <div>
+          <div style={{fontSize:10,color:"var(--text3)",fontWeight:600,letterSpacing:.5,textTransform:"uppercase"}}>Faturamento</div>
+          <div style={{fontFamily:"Syne",fontSize:15,fontWeight:700,color:"var(--blue)"}}>{fmtUSD(total)}</div>
+        </div>
       </div>
+      {rows.length===0
+        ? <div className="empty" style={{padding:"20px 0"}}>Sem pedidos</div>
+        : <div className="tw" style={{borderRadius:8}}>
+            <table className="cart-table">
+              <thead><tr>
+                <th>Invoice</th><th>Cliente</th><th>Destino</th>
+                <th style={{textAlign:"right"}}>Valor USD</th><th>ETA</th><th>NF</th><th>Status Doc</th>
+              </tr></thead>
+              <tbody>{rows.map(r=>(
+                <tr key={r.invoice}>
+                  <td><strong style={{color:"var(--blue)"}}>{r.invoice}</strong></td>
+                  <td style={{color:"var(--text2)"}}>{r.cliente||"—"}</td>
+                  <td>{r.destino||"—"}</td>
+                  <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:500}}>{fmtUSD(r.valor_usd)}</td>
+                  <td style={{color:"var(--text2)"}}>{fmtDate(r.eta_pedido)}</td>
+                  <td style={{color:"var(--text2)"}}>{r.nf||"—"}</td>
+                  <td><DocBadge v={r.status_doc}/></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+      }
     </div>;
   };
 
   return <div className="page">
-    <div className="ph"><h2>Carteira de Pedidos</h2><p>Programação de embarques e ETAs</p></div>
+    <div className="ph">
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div><h2>Carteira de Pedidos</h2><p>Programação de embarques por período</p></div>
+        <button className="btn bgx bsm" onClick={()=>exportCart([m1,m2,m3])}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Exportar os 3 meses
+        </button>
+      </div>
+    </div>
     <div className="card mb20">
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
-        {[["MÊS 1",m1,setM1],["MÊS 2",m2,setM2],["MÊS 3",m3,setM3]].map(([lb,val,set])=>(
+        {[["MÊS 1",m1,setM1,"#D97706"],["MÊS 2",m2,setM2,"#1A6DC8"],["MÊS 3",m3,setM3,"#059669"]].map(([lb,val,set,col])=>(
           <div key={lb}>
             <div style={{fontSize:11,fontWeight:600,color:"var(--text2)",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>{lb}</div>
-            <select className="sel" style={{width:"100%"}} value={val} onChange={e=>set(e.target.value)}>
+            <select className="sel" style={{width:"100%",borderColor:col+"66"}} value={val} onChange={e=>set(e.target.value)}>
               {avail.map(m=><option key={m}>{m}</option>)}
             </select>
           </div>
         ))}
       </div>
     </div>
-    <div className="g3"><Col mes={m1}/><Col mes={m2}/><Col mes={m3}/></div>
+    <div className="g3">
+      <MesTable mes={m1} color="#D97706"/>
+      <MesTable mes={m2} color="#1A6DC8"/>
+      <MesTable mes={m3} color="#059669"/>
+    </div>
   </div>;
 }
 
@@ -537,13 +665,15 @@ function PgBase({recs,onSave,onDel,notify}) {
       <div className="tw"><table>
         <thead><tr><th>Invoice</th><th>Mês Ref</th><th>Cliente</th><th>Destino</th><th>Valor USD</th><th>Frete USD</th><th>Agente</th><th>Container</th><th>ETA</th><th>Status Doc</th><th>Status</th><th></th></tr></thead>
         <tbody>
-          {fil.length===0?<tr><td colSpan={12} className="empty">Nenhum registro</td></tr>
+          {fil.length===0?<tr><td colSpan={12} className="empty">Nenhum registro encontrado</td></tr>
           :fil.map(r=><tr key={r.invoice} onClick={()=>openEdit(r)}>
-            <td><strong>{r.invoice}</strong></td><td className="m">{r.mes_ref}</td>
+            <td><strong style={{color:"var(--blue)"}}>{r.invoice}</strong></td>
+            <td className="m">{r.mes_ref}</td>
             <td>{r.cliente}</td><td>{r.destino||"—"}</td>
             <td className="r">{fmtUSD(r.valor_usd)}</td><td className="r">{fmtUSD(r.frete_usd)}</td>
             <td className="m">{r.agente?.split(" -")[0]||"—"}</td><td className="m">{r.container||"—"}</td>
-            <td>{fmtDate(r.eta_pedido)}</td><td><DocBadge v={r.status_doc}/></td><td><EmbBadge v={r.status}/></td>
+            <td>{fmtDate(r.eta_pedido)}</td>
+            <td><DocBadge v={r.status_doc}/></td><td><EmbBadge v={r.status}/></td>
             <td onClick={e=>{e.stopPropagation();setDel(r)}}><button className="btn bd bsm">✕</button></td>
           </tr>)}
         </tbody>
@@ -607,10 +737,30 @@ function PgRel({recs}) {
     return {list,tot};
   },[recs,yr]);
 
+  const allYearKeys = useMemo(()=>{
+    const s=new Set([...Object.keys(HIST)]);
+    recs.forEach(r=>{const y=r.mes_ref?.split(" ")[1];if(y)s.add(y);});
+    return [...s].sort();
+  },[recs]);
+
   function csv(data,name){if(!data.length)return;const k=Object.keys(data[0]);const c=[k.join(","),...data.map(r=>k.map(x=>JSON.stringify(r[x]??"")||"").join(","))].join("\n");const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(c);a.download=name;a.click();}
 
+  const REL_COLS = [
+    {label:"Invoice",   val:r=>r.invoice,    w:10},
+    {label:"Cliente",   val:r=>r.cliente,    w:14},
+    {label:"PO#",       val:r=>r.po,         w:14},
+    {label:"NF",        val:r=>r.nf,         w:10},
+    {label:"Destino",   val:r=>r.destino,    w:16},
+    {label:"Valor USD", val:r=>r.valor_usd,  w:14},
+    {label:"Frete USD", val:r=>r.frete_usd,  w:14},
+    {label:"Container", val:r=>r.container,  w:16},
+    {label:"ETA",       val:r=>r.eta_pedido, w:12},
+    {label:"Status Doc",val:r=>r.status_doc, w:14},
+    {label:"Status",    val:r=>r.status,     w:16},
+  ];
+
   return <div className="page">
-    <div className="ph"><h2>Relatórios</h2><p>Relatórios mensais e anuais com exportação CSV</p></div>
+    <div className="ph"><h2>Relatórios</h2><p>Relatórios mensais e anuais com exportação CSV e Excel</p></div>
     <div className="tabs">
       {[["mensal","Mensal"],["anual","Anual"],["geral","Geral"]].map(([id,lb])=>(
         <div key={id} className={`tab${tab===id?" on":""}`} onClick={()=>setTab(id)}>{lb}</div>
@@ -618,9 +768,10 @@ function PgRel({recs}) {
     </div>
 
     {tab==="mensal"&&<>
-      <div style={{display:"flex",gap:12,marginBottom:18,alignItems:"center",flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
         <select className="sel" value={mes} onChange={e=>setMes(e.target.value)}>{avail.map(m=><option key={m}>{m}</option>)}</select>
-        <button className="btn bgd bsm" onClick={()=>csv(monthly.rows,"relatorio_"+mes.replace(" ","_")+".csv")}>↓ Exportar CSV</button>
+        <button className="btn bgx bsm" onClick={()=>exportXLS(monthly.rows,REL_COLS,`Mensal_${mes.replace(" ","_")}.xlsx`,mes)}>↓ Excel</button>
+        <button className="btn bg2 bsm" onClick={()=>csv(monthly.rows,"relatorio_"+mes.replace(" ","_")+".csv")}>↓ CSV</button>
       </div>
       <div className="kg">
         <div className="kp hi"><div className="kl">Faturamento</div><div className="kv tc" style={{fontSize:20}}>{fmtUSD(monthly.fat)}</div></div>
@@ -637,7 +788,7 @@ function PgRel({recs}) {
         <div className="tw"><table>
           <thead><tr><th>Invoice</th><th>Cliente</th><th>PO#</th><th>NF</th><th>Destino</th><th>Valor USD</th><th>Frete USD</th><th>Container</th><th>ETA</th><th>Status Doc</th></tr></thead>
           <tbody>{monthly.rows.map(r=><tr key={r.invoice}>
-            <td><strong>{r.invoice}</strong></td><td>{r.cliente}</td><td className="m">{r.po||"—"}</td><td>{r.nf||"—"}</td>
+            <td><strong style={{color:"var(--blue)"}}>{r.invoice}</strong></td><td>{r.cliente}</td><td className="m">{r.po||"—"}</td><td>{r.nf||"—"}</td>
             <td>{r.destino||"—"}</td><td className="r">{fmtUSD(r.valor_usd)}</td><td className="r">{fmtUSD(r.frete_usd)}</td>
             <td className="m">{r.container||"—"}</td><td>{fmtDate(r.eta_pedido)}</td><td><DocBadge v={r.status_doc}/></td>
           </tr>)}</tbody>
@@ -646,9 +797,12 @@ function PgRel({recs}) {
     </>}
 
     {tab==="anual"&&<>
-      <div style={{display:"flex",gap:12,marginBottom:18,alignItems:"center"}}>
-        <select className="sel" value={yr} onChange={e=>setYr(e.target.value)}>{ANOS.map(a=><option key={a}>{a}</option>)}</select>
-        <button className="btn bgd bsm" onClick={()=>csv(annual.list.map(r=>({Mês:r.m,Containers:r.cnt,Faturamento:r.fat.toFixed(2),Frete:r.fret.toFixed(2)})),"anual_"+yr+".csv")}>↓ Exportar CSV</button>
+      <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center"}}>
+        <select className="sel" value={yr} onChange={e=>setYr(e.target.value)}>{allYearKeys.map(a=><option key={a}>{a}</option>)}</select>
+        <button className="btn bgx bsm" onClick={()=>exportXLS(annual.list.map(r=>({Mês:r.m,Containers:r.cnt,Faturamento:r.fat.toFixed(2),Frete:r.fret.toFixed(2)})),
+          [{label:"Mês",val:r=>r.Mês,w:14},{label:"Containers",val:r=>r.Containers,w:12},{label:"Faturamento",val:r=>r.Faturamento,w:16},{label:"Frete",val:r=>r.Frete,w:14}],
+          `Anual_${yr}.xlsx`,"Anual "+yr)}>↓ Excel</button>
+        <button className="btn bg2 bsm" onClick={()=>csv(annual.list.map(r=>({Mês:r.m,Containers:r.cnt,Faturamento:r.fat.toFixed(2),Frete:r.fret.toFixed(2)})),"anual_"+yr+".csv")}>↓ CSV</button>
       </div>
       <div className="kg">
         <div className="kp hi"><div className="kl">Faturamento {yr}</div><div className="kv tc" style={{fontSize:20}}>{fmtUSD(annual.tot.fat)}</div></div>
@@ -667,7 +821,7 @@ function PgRel({recs}) {
               <td className="r">{fmtUSD(r.fret)}</td><td className="r">{fmtUSD(r.cnt?r.fat/r.cnt:0)}</td>
               <td className="r">{r.fat?((r.fret/r.fat)*100).toFixed(1)+"%":"—"}</td>
             </tr>)}
-            <tr style={{background:"rgba(14,165,233,.08)",fontWeight:700}}>
+            <tr style={{background:"#EBF4FE",fontWeight:700}}>
               <td><strong>TOTAL</strong></td><td className="r">{annual.tot.cnt}</td><td className="r">{fmtUSD(annual.tot.fat)}</td>
               <td className="r">{fmtUSD(annual.tot.fret)}</td><td className="r">{fmtUSD(annual.tot.cnt?annual.tot.fat/annual.tot.cnt:0)}</td>
               <td className="r">{annual.tot.fat?((annual.tot.fret/annual.tot.fat)*100).toFixed(1)+"%":"—"}</td>
@@ -678,17 +832,20 @@ function PgRel({recs}) {
     </>}
 
     {tab==="geral"&&<>
-      <div style={{marginBottom:18}}><button className="btn bgd bsm" onClick={()=>csv(recs,"exportacoes_completo.csv")}>↓ Exportar Todos os Dados</button></div>
+      <div style={{marginBottom:16,display:"flex",gap:10}}>
+        <button className="btn bgx bsm" onClick={()=>exportXLS(recs,REL_COLS,"Exportacoes_Completo.xlsx","Completo")}>↓ Excel Completo</button>
+        <button className="btn bg2 bsm" onClick={()=>csv(recs,"exportacoes_completo.csv")}>↓ CSV Completo</button>
+      </div>
       <div className="g2 mb20">
         <div className="card"><div className="ct">Faturamento por Ano</div>
-          <Bar data={Object.entries(recs.reduce((a,r)=>{const y=r.mes_ref?.split(" ")[1];if(y)a[y]=(a[y]||0)+(r.valor_usd||0);return a},{})).sort().map(([l,v])=>({l,v}))} color="#F59E0B" fmt={v=>"$"+Math.round(v/1000)+"k"}/>
+          <Bar data={Object.entries(recs.reduce((a,r)=>{const y=r.mes_ref?.split(" ")[1];if(y)a[y]=(a[y]||0)+(r.valor_usd||0);return a},{})).sort().map(([l,v])=>({l,v}))} color="#D97706" fmt={v=>"$"+Math.round(v/1000)+"k"}/>
         </div>
         <div className="card"><div className="ct">Containers por Ano</div>
-          <Bar data={Object.entries(recs.reduce((a,r)=>{const y=r.mes_ref?.split(" ")[1];if(y)a[y]=(a[y]||0)+1;return a},{})).sort().map(([l,v])=>({l,v}))} color="#10B981"/>
+          <Bar data={Object.entries(recs.reduce((a,r)=>{const y=r.mes_ref?.split(" ")[1];if(y)a[y]=(a[y]||0)+1;return a},{})).sort().map(([l,v])=>({l,v}))} color="#059669"/>
         </div>
       </div>
       <div className="card"><div className="ct">Participação por Cliente (todos os anos)</div>
-        <Bar data={Object.entries(recs.reduce((a,r)=>{const c=r.cliente||"—";a[c]=(a[c]||0)+(r.valor_usd||0);return a},{})).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}))} color="#8B5CF6" fmt={v=>"$"+Math.round(v/1000)+"k"}/>
+        <Bar data={Object.entries(recs.reduce((a,r)=>{const c=r.cliente||"—";a[c]=(a[c]||0)+(r.valor_usd||0);return a},{})).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}))} color="#7C3AED" fmt={v=>"$"+Math.round(v/1000)+"k"}/>
       </div>
     </>}
   </div>;
