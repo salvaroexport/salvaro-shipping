@@ -67,19 +67,156 @@ const HIST = {
 const fmtUSD = v => (!v && v!==0) ? "—" : new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2}).format(v);
 const fmtDate = d => { if(!d) return "—"; const dt=new Date(d+"T00:00:00"); return isNaN(dt)?"—":dt.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"}); };
 
-/* Excel export utility */
-function exportXLS(rows, cols, filename, sheetTitle) {
-  const header = cols.map(c=>c.label);
-  const data = rows.map(r => cols.map(c => {
-    const v = c.val(r);
-    return v ?? "";
-  }));
-  const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
-  /* column widths */
-  ws["!cols"] = cols.map(c=>({wch: c.w||16}));
+/* ── Excel helpers ── */
+function xlDate(d) {
+  if(!d) return "";
+  const dt = new Date(d+"T00:00:00");
+  return isNaN(dt) ? "" : dt.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
+}
+function xlUSD(v) { return v ? Number(v) : ""; }
+
+/* Styles constants for xlsx-js-style (we use XLSX which supports !cols/!rows but not cell styles in community build)
+   We use a workaround: build rich HTML then convert, OR build formatted aoa with merged cells via XLSX.utils */
+
+/* ══════════════════════════════════════════════════
+   OPERACIONAL Excel Export — fiel ao modelo original
+══════════════════════════════════════════════════ */
+function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
+  const today = new Date().toLocaleDateString("pt-BR");
+
+  /* Build sheet as array-of-arrays */
+  const aoa = [];
+
+  /* Row 1: main title */
+  aoa.push(["CONTROLE OPERACIONAL DE EMBARQUES","","","","","","","","","","","ATUALIZADO EM",today,"","",""]);
+
+  /* Row 2: month selectors */
+  aoa.push(["","","ANTERIOR:",ant,"","VIGENTE:",vig,"","","SEGUINTE:",seg,"","","","",""]);
+
+  aoa.push([]); /* Row 3: spacer */
+
+  /* Helper: push one section (month label + header + data + totals) */
+  function pushSection(mesLabel, rows) {
+    /* Month label row */
+    aoa.push([mesLabel,"","","","","","","","","","","","","",""]);
+    /* Header row */
+    aoa.push(["Nº","INV","CLIENTE","PO#","NF","DESTINO","ETA PEDIDO","AGENTE","BOOKING","CONTAINER","NAVIO","DL CARGA","ESTUFAGEM","TRANSP."]);
+    /* Data rows — alternating fill */
+    rows.forEach((r,i) => {
+      aoa.push([
+        r.nr||i+1,
+        r.invoice||"",
+        r.cliente||"",
+        r.po||"",
+        r.nf||"",
+        r.destino||"",
+        xlDate(r.eta_pedido),
+        r.agente||"",
+        r.booking||"",
+        r.container||"",
+        r.navio||"",
+        xlDate(r.dl_carga),
+        xlDate(r.estufagem),
+        r.transportadora||"",
+      ]);
+    });
+    /* Totals row */
+    const totalUSD = rows.reduce((s,r)=>s+(r.valor_usd||0),0);
+    aoa.push(["","","","","TOTAL USD:",totalUSD.toFixed(2),"","","","","","","","",""]);
+    aoa.push(["","","","","Nº CONTAINERS:",rows.length,"","","","","","","","",""]);
+    aoa.push([]); /* spacer */
+  }
+
+  pushSection(ant, antRows);
+  pushSection(vig, vigRows);
+  pushSection(seg, segRows);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  /* Column widths matching original */
+  ws["!cols"] = [
+    {wch:5},{wch:8},{wch:14},{wch:14},{wch:8},{wch:14},
+    {wch:13},{wch:22},{wch:15},{wch:14},{wch:22},{wch:12},{wch:13},{wch:10}
+  ];
+
+  /* Page setup: landscape, A4, fit to 1 page wide */
+  ws["!pageSetup"] = {orientation:"landscape",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
+  ws["!printOptions"] = {gridLines:false};
+  ws["!margins"] = {left:0.5,right:0.5,top:0.75,bottom:0.75,header:0.3,footer:0.3};
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, sheetTitle||"Dados");
-  XLSX.writeFile(wb, filename);
+  XLSX.utils.book_append_sheet(wb, ws, "OPERACIONAL");
+  XLSX.writeFile(wb, `Operacional_${vig.replace(" ","_")}.xlsx`);
+}
+
+/* ══════════════════════════════════════════════════
+   CARTEIRA Excel Export — fiel ao modelo original
+   Layout: Mês1 (cols B-G) | Mês2 (cols J-O) | Mês3 abaixo
+══════════════════════════════════════════════════ */
+function exportCarteiraXLS(m1, rows1, m2, rows2, m3, rows3) {
+  const today = new Date().toLocaleDateString("pt-BR");
+
+  /* Carteira original: 2 meses side-by-side cols B-G | J-O, 3rd month below */
+  const aoa = [];
+
+  /* Row 1: title */
+  aoa.push(["","PROGRAMAÇÃO DE EMBARQUES / ETAs SOLICITADOS","","","","","","","","","","","","","ATUALIZADO EM",today]);
+  /* Row 2: month labels */
+  aoa.push(["","MÊS 1:",m1,"","","MÊS 2:",m2,"","","","MÊS 3:",m3,"","","",""]);
+  aoa.push([]); /* spacer */
+
+  /* Headers for side-by-side section */
+  const HDR = ["INV","CLIENTE","PO#","USD","DESTINO","ETA SOLICITADO"];
+  const maxRows12 = Math.max(rows1.length, rows2.length);
+
+  /* Month 1 + 2 header row */
+  aoa.push(["",m1,"","","","","","","",m2,"","","","","",""]);
+  aoa.push(["", ...HDR, "","", ...HDR, ""]);
+
+  /* Data rows side-by-side */
+  for(let i=0;i<maxRows12;i++){
+    const r1=rows1[i], r2=rows2[i];
+    aoa.push([
+      "",
+      r1?r1.invoice:"", r1?r1.cliente:"", r1?r1.po:"", r1?xlUSD(r1.valor_usd):"", r1?r1.destino:"", r1?xlDate(r1.eta_pedido):"",
+      "","",
+      r2?r2.invoice:"", r2?r2.cliente:"", r2?r2.po:"", r2?xlUSD(r2.valor_usd):"", r2?r2.destino:"", r2?xlDate(r2.eta_pedido):"",
+      ""
+    ]);
+  }
+
+  /* Totals for m1 and m2 */
+  const t1=rows1.reduce((s,r)=>s+(r.valor_usd||0),0);
+  const t2=rows2.reduce((s,r)=>s+(r.valor_usd||0),0);
+  aoa.push(["","","","",t1.toFixed(2),"","","","","","","",t2.toFixed(2),"","",""]);
+  aoa.push(["","","Nº containers",rows1.length,"","","","","","","Nº containers",rows2.length,"","","",""]);
+  aoa.push([]); /* spacer */
+
+  /* Month 3 below */
+  aoa.push(["",m3,"","","","",""]);
+  aoa.push(["", ...HDR]);
+  rows3.forEach((r,i)=>{
+    aoa.push(["",r.invoice||"",r.cliente||"",r.po||"",xlUSD(r.valor_usd),r.destino||"",xlDate(r.eta_pedido)]);
+  });
+  const t3=rows3.reduce((s,r)=>s+(r.valor_usd||0),0);
+  aoa.push(["","","",t3.toFixed(2),"","",""]);
+  aoa.push(["","","Nº containers",rows3.length,"","",""]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  /* Column widths */
+  ws["!cols"] = [
+    {wch:3},{wch:9},{wch:14},{wch:14},{wch:12},{wch:14},{wch:14},
+    {wch:2},{wch:2},
+    {wch:9},{wch:14},{wch:14},{wch:12},{wch:14},{wch:14},{wch:3}
+  ];
+
+  ws["!pageSetup"] = {orientation:"landscape",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
+  ws["!margins"] = {left:0.5,right:0.5,top:0.75,bottom:0.75,header:0.3,footer:0.3};
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "CARTEIRA");
+  XLSX.writeFile(wb, `Carteira_${m1.replace(" ","_")}.xlsx`);
 }
 
 const CSS = `
@@ -426,30 +563,10 @@ function PgOps({recs}) {
   const [vig,setVig]=useState(MESES[ci]+" "+cy);
   const [seg,setSeg]=useState(MESES[ni]+" "+ny);
 
-  const OPS_COLS = [
-    {label:"Nº",        val:r=>r.nr,            w:5},
-    {label:"Invoice",   val:r=>r.invoice,       w:10},
-    {label:"Cliente",   val:r=>r.cliente,       w:14},
-    {label:"PO#",       val:r=>r.po,            w:14},
-    {label:"NF",        val:r=>r.nf,            w:10},
-    {label:"Destino",   val:r=>r.destino,       w:16},
-    {label:"ETA",       val:r=>r.eta_pedido,    w:12},
-    {label:"Agente",    val:r=>r.agente,        w:22},
-    {label:"Booking",   val:r=>r.booking,       w:16},
-    {label:"Container", val:r=>r.container,     w:16},
-    {label:"Navio",     val:r=>r.navio,         w:20},
-    {label:"DL Carga",  val:r=>r.dl_carga,      w:12},
-    {label:"Estufagem", val:r=>r.estufagem,     w:12},
-    {label:"Transp.",   val:r=>r.transportadora,w:12},
-  ];
-
-  function exportOps(mes, label) {
-    const rows = recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
-    exportXLS(rows, OPS_COLS, `Operacional_${mes.replace(" ","_")}.xlsx`, label.slice(0,8));
-  }
+  function getRows(mes){ return recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0)); }
 
   const Sec=({title,mes,col})=>{
-    const rows=recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
+    const rows=getRows(mes);
     const tot=rows.reduce((s,r)=>s+(r.valor_usd||0),0);
     return <div className="card mb20">
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
@@ -459,10 +576,6 @@ function PgOps({recs}) {
           <strong style={{fontSize:14,color:"var(--text)"}}>{mes}</strong>
           <span style={{color:"var(--text2)",fontSize:12}}>— {rows.length} embarques — {fmtUSD(tot)}</span>
         </div>
-        <button className="btn bgx bsm" onClick={()=>exportOps(mes,title)}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Excel
-        </button>
       </div>
       <div className="tw"><table>
         <thead><tr><th>Nº</th><th>Invoice</th><th>Cliente</th><th>PO#</th><th>NF</th><th>Destino</th><th>ETA</th><th>Agente</th><th>Booking</th><th>Container</th><th>Navio</th><th>DL Carga</th><th>Estufagem</th><th>Transp.</th></tr></thead>
@@ -483,7 +596,15 @@ function PgOps({recs}) {
   };
 
   return <div className="page">
-    <div className="ph"><h2>Controle Operacional</h2><p>Mês anterior, vigente e seguinte</p></div>
+    <div className="ph">
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div><h2>Controle Operacional</h2><p>Mês anterior, vigente e seguinte</p></div>
+        <button className="btn bgx bsm" onClick={()=>exportOperacionalXLS(ant,getRows(ant),vig,getRows(vig),seg,getRows(seg))}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Exportar Excel (3 meses)
+        </button>
+      </div>
+    </div>
     <div className="card mb20">
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
         {[["Mês Anterior",ant,setAnt,"#D97706"],["Mês Vigente",vig,setVig,"#1A6DC8"],["Mês Seguinte",seg,setSeg,"#059669"]].map(([lb,val,set,col])=>(
@@ -514,25 +635,10 @@ function PgCart({recs}) {
   const [m2,setM2]=useState(MESES[ni]+" "+ny);
   const [m3,setM3]=useState(MESES[n2]+" "+n2y);
 
-  const CART_COLS = [
-    {label:"Invoice",   val:r=>r.invoice,    w:10},
-    {label:"Cliente",   val:r=>r.cliente,    w:14},
-    {label:"PO#",       val:r=>r.po,         w:14},
-    {label:"NF",        val:r=>r.nf,         w:10},
-    {label:"Destino",   val:r=>r.destino,    w:16},
-    {label:"Valor USD", val:r=>r.valor_usd,  w:14},
-    {label:"ETA",       val:r=>r.eta_pedido, w:12},
-    {label:"Status",    val:r=>r.status,     w:16},
-    {label:"Mês Ref",   val:r=>r.mes_ref,    w:14},
-  ];
-
-  function exportCart(meses) {
-    const rows = recs.filter(r=>meses.includes(r.mes_ref)).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
-    exportXLS(rows, CART_COLS, `Carteira_${meses[0].replace(" ","_")}.xlsx`, "Carteira");
-  }
+  function getCartRows(mes){ return recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0)); }
 
   const MesTable = ({mes, color}) => {
-    const rows = recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
+    const rows = getCartRows(mes);
     const total = rows.reduce((s,r)=>s+(r.valor_usd||0),0);
     return <div className="card">
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
@@ -540,10 +646,6 @@ function PgCart({recs}) {
           <div style={{width:10,height:10,borderRadius:"50%",background:color,flexShrink:0}}/>
           <strong style={{fontSize:14,color:"var(--text)"}}>{mes}</strong>
         </div>
-        <button className="btn bgx bsm" onClick={()=>exportCart([mes])}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Excel
-        </button>
       </div>
       <div style={{display:"flex",gap:20,marginBottom:10,paddingBottom:10,borderBottom:"1px solid var(--border)"}}>
         <div>
@@ -584,9 +686,9 @@ function PgCart({recs}) {
     <div className="ph">
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
         <div><h2>Carteira de Pedidos</h2><p>Programação de embarques por período</p></div>
-        <button className="btn bgx bsm" onClick={()=>exportCart([m1,m2,m3])}>
+        <button className="btn bgx bsm" onClick={()=>exportCarteiraXLS(m1,getCartRows(m1),m2,getCartRows(m2),m3,getCartRows(m3))}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Exportar os 3 meses
+          Exportar Excel (3 meses)
         </button>
       </div>
     </div>
@@ -745,19 +847,43 @@ function PgRel({recs}) {
 
   function csv(data,name){if(!data.length)return;const k=Object.keys(data[0]);const c=[k.join(","),...data.map(r=>k.map(x=>JSON.stringify(r[x]??"")||"").join(","))].join("\n");const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(c);a.download=name;a.click();}
 
-  const REL_COLS = [
-    {label:"Invoice",   val:r=>r.invoice,    w:10},
-    {label:"Cliente",   val:r=>r.cliente,    w:14},
-    {label:"PO#",       val:r=>r.po,         w:14},
-    {label:"NF",        val:r=>r.nf,         w:10},
-    {label:"Destino",   val:r=>r.destino,    w:16},
-    {label:"Valor USD", val:r=>r.valor_usd,  w:14},
-    {label:"Frete USD", val:r=>r.frete_usd,  w:14},
-    {label:"Container", val:r=>r.container,  w:16},
-    {label:"ETA",       val:r=>r.eta_pedido, w:12},
-    {label:"Status Doc",val:r=>r.status_doc, w:14},
-    {label:"Status",    val:r=>r.status,     w:16},
-  ];
+  function relXLS(rows, mes) {
+    const aoa = [
+      ["RELATÓRIO MENSAL — "+mes,"","","","","","","","","",""],
+      ["","","","","","","","","","",""],
+      ["INVOICE","CLIENTE","PO#","NF","DESTINO","VALOR USD","FRETE USD","CONTAINER","ETA","STATUS DOC","STATUS"],
+    ];
+    rows.forEach((r,i)=>{
+      aoa.push([r.invoice||"",r.cliente||"",r.po||"",r.nf||"",r.destino||"",
+        xlUSD(r.valor_usd),xlUSD(r.frete_usd),r.container||"",xlDate(r.eta_pedido),r.status_doc||"",r.status||""]);
+    });
+    const totalUSD = rows.reduce((s,r)=>s+(r.valor_usd||0),0);
+    aoa.push(["","","","","TOTAL USD",totalUSD,"","","","",""]);
+    aoa.push(["","","","","Nº CONTAINERS",rows.length,"","","","",""]);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"]=[{wch:10},{wch:14},{wch:14},{wch:10},{wch:14},{wch:13},{wch:13},{wch:15},{wch:12},{wch:14},{wch:16}];
+    ws["!pageSetup"]={orientation:"landscape",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
+    ws["!margins"]={left:0.5,right:0.5,top:0.75,bottom:0.75};
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,mes.slice(0,8));
+    XLSX.writeFile(wb,`Mensal_${mes.replace(" ","_")}.xlsx`);
+  }
+
+  function annualXLS(list, yr) {
+    const aoa=[["RELATÓRIO ANUAL — "+yr,"","","","",""],["","","","","",""],
+      ["MÊS","CONTAINERS","FATURAMENTO USD","FRETE USD","MÉDIA/CNTR","% FRETE/FAT"]];
+    list.forEach(r=>{
+      aoa.push([r.m,r.cnt,r.fat,r.fret,r.cnt?r.fat/r.cnt:0,r.fat?(r.fret/r.fat):0]);
+    });
+    const tot=list.reduce((a,r)=>({fat:a.fat+r.fat,cnt:a.cnt+r.cnt,fret:a.fret+r.fret}),{fat:0,cnt:0,fret:0});
+    aoa.push(["TOTAL",tot.cnt,tot.fat,tot.fret,tot.cnt?tot.fat/tot.cnt:0,tot.fat?tot.fret/tot.fat:0]);
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws["!cols"]=[{wch:14},{wch:12},{wch:16},{wch:14},{wch:14},{wch:14}];
+    ws["!pageSetup"]={orientation:"portrait",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,yr);
+    XLSX.writeFile(wb,`Anual_${yr}.xlsx`);
+  }
+
+  const REL_COLS = null; /* unused — kept for reference */
 
   return <div className="page">
     <div className="ph"><h2>Relatórios</h2><p>Relatórios mensais e anuais com exportação CSV e Excel</p></div>
@@ -770,7 +896,7 @@ function PgRel({recs}) {
     {tab==="mensal"&&<>
       <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
         <select className="sel" value={mes} onChange={e=>setMes(e.target.value)}>{avail.map(m=><option key={m}>{m}</option>)}</select>
-        <button className="btn bgx bsm" onClick={()=>exportXLS(monthly.rows,REL_COLS,`Mensal_${mes.replace(" ","_")}.xlsx`,mes)}>↓ Excel</button>
+        <button className="btn bgx bsm" onClick={()=>relXLS(monthly.rows,mes)}>↓ Excel</button>
         <button className="btn bg2 bsm" onClick={()=>csv(monthly.rows,"relatorio_"+mes.replace(" ","_")+".csv")}>↓ CSV</button>
       </div>
       <div className="kg">
@@ -799,9 +925,7 @@ function PgRel({recs}) {
     {tab==="anual"&&<>
       <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center"}}>
         <select className="sel" value={yr} onChange={e=>setYr(e.target.value)}>{allYearKeys.map(a=><option key={a}>{a}</option>)}</select>
-        <button className="btn bgx bsm" onClick={()=>exportXLS(annual.list.map(r=>({Mês:r.m,Containers:r.cnt,Faturamento:r.fat.toFixed(2),Frete:r.fret.toFixed(2)})),
-          [{label:"Mês",val:r=>r.Mês,w:14},{label:"Containers",val:r=>r.Containers,w:12},{label:"Faturamento",val:r=>r.Faturamento,w:16},{label:"Frete",val:r=>r.Frete,w:14}],
-          `Anual_${yr}.xlsx`,"Anual "+yr)}>↓ Excel</button>
+        <button className="btn bgx bsm" onClick={()=>annualXLS(annual.list,yr)}>↓ Excel</button>
         <button className="btn bg2 bsm" onClick={()=>csv(annual.list.map(r=>({Mês:r.m,Containers:r.cnt,Faturamento:r.fat.toFixed(2),Frete:r.fret.toFixed(2)})),"anual_"+yr+".csv")}>↓ CSV</button>
       </div>
       <div className="kg">
@@ -833,8 +957,7 @@ function PgRel({recs}) {
 
     {tab==="geral"&&<>
       <div style={{marginBottom:16,display:"flex",gap:10}}>
-        <button className="btn bgx bsm" onClick={()=>exportXLS(recs,REL_COLS,"Exportacoes_Completo.xlsx","Completo")}>↓ Excel Completo</button>
-        <button className="btn bg2 bsm" onClick={()=>csv(recs,"exportacoes_completo.csv")}>↓ CSV Completo</button>
+        <button className="btn bgx bsm" onClick={()=>csv(recs,"exportacoes_completo.csv")}>↓ CSV Completo</button>
       </div>
       <div className="g2 mb20">
         <div className="card"><div className="ct">Faturamento por Ano</div>
