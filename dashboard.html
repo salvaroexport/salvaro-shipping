@@ -53,8 +53,11 @@ const MESES      = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO
 const ANOS       = ["2025","2026","2027"];
 const ALL_MONTHS = ANOS.flatMap(a => MESES.map(m => m + " " + a));
 
-/* Dados históricos 2018-2024 (do Resumo Anual da planilha) */
+/* Dados históricos 2015-2024 (Resumo Anual da planilha p/ 2018-2024; planilhas anuais p/ 2015-2017) */
 const HIST = {
+  "2015":{fat:3027837.36,cnt:80,fret:96629},
+  "2016":{fat:3743926.96,cnt:126,fret:133353},
+  "2017":{fat:5046486.91,cnt:145,fret:221953},
   "2018":{fat:4629070.27,cnt:155,fret:322595},
   "2019":{fat:4914200.65,cnt:150,fret:247013.35},
   "2020":{fat:5801294.74,cnt:178,fret:285768},
@@ -535,7 +538,7 @@ function PgDash({recs}) {
       <div className="card"><div className="ct">Status Documentação</div><Donut data={docSt}/></div>
     </div>
     <div className="card">
-      <div className="ct">Histórico Anual (2018 – presente)</div>
+      <div className="ct">Histórico Anual (2015 – presente)</div>
       <div className="tw"><table>
         <thead><tr><th>Ano</th><th>Faturamento</th><th>Containers</th><th>Média/CNTR</th><th>Frete Total</th><th>% Frete/Fat</th></tr></thead>
         <tbody>{annual.map(r=>(
