@@ -66,6 +66,49 @@ const HIST = (()=>{
   return m;
 })();
 
+/* ══════════════════════════════════════════
+   NORMALIZAÇÃO DE DADOS
+   Unifica variações de nome para análise
+══════════════════════════════════════════ */
+const NORM_CLIENTE = {
+  "EASTCOAST":"ECMD","EAST COAST":"ECMD","EASTCOAST - SC":"ECMD","EASTCOAST - TX":"ECMD","ECMD NC":"ECMD",
+  "BLUELINX TAMPA":"BLUELINX","BLUELINX CORP":"BLUELINX","BLUELINX CORP.":"BLUELINX","BLUELINX JACKSONVILLE":"BLUELINX",
+  "BLUELINX ATLANTA":"BLUELINX","BLUELINX IMPORTS":"BLUELINX","BLUELINX S.A.":"BLUELINX","BLUELINX JAX":"BLUELINX",
+  "BLUELINX SAN ANT.":"BLUELINX","BLUELINX GULFPORT":"BLUELINX","BLUENLINX JAX":"BLUELINX",
+  "METRIE - BALTIMORE":"METRIE","METRIE -BALTIMORE":"METRIE","METRIE BALTIMORE":"METRIE",
+  "METRIE - ATLANTA":"METRIE","METRIE -ATLANTA":"METRIE","METRIE ATLANTA":"METRIE",
+  "METRIE - DALLAS":"METRIE","METRIE DALLAS":"METRIE","METRIE INC":"METRIE",
+  "EMPIRE VIRGINIA":"EMPIRE",
+  "SHAMROCK INT'L":"SHAMROCK",
+  "W00DGRAIN":"WOODGRAIN",
+};
+
+const NORM_DESTINO = {
+  "PHILADELHIA":"PHILADELPHIA",
+  "EVERGLADES":"PORT EVERGLADES",
+  "SPRING HILL":"SPRINGHILL",
+  "DAP - NORTH SPRINGFIELD":"DAP NORTH SPRINGFIELD",
+  "DESTINATION PORT":"","####":"",
+};
+
+const NORM_PORTO = {
+  "ITAPOÁ":"ITAPOA","ITAJAÍ":"ITAJAI",
+  "LOAD PORT":"","LOADING PORT":"","####":"",
+  "CRICIUMA":"CRICIUMA",
+};
+
+function normalize(rec) {
+  const r = {...rec};
+  if(r.cliente) r.cliente = NORM_CLIENTE[r.cliente] || r.cliente;
+  if(r.destino) r.destino = NORM_DESTINO[r.destino] || r.destino;
+  if(r.porto_origem) r.porto_origem = NORM_PORTO[r.porto_origem] || r.porto_origem;
+  if(r.porto_carga) r.porto_carga = NORM_PORTO[r.porto_carga] || r.porto_carga;
+  return r;
+}
+
+/* Aplicar normalização nos registros históricos em memória */
+HIST_RECS.forEach((r,i) => { HIST_RECS[i] = normalize(r); });
+
 const fmtUSD = v => (!v && v!==0) ? "—" : new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2}).format(v);
 const fmtDate = d => { if(!d) return "—"; const dt=new Date(d+"T00:00:00"); return isNaN(dt)?"—":dt.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"}); };
 
@@ -509,7 +552,7 @@ function App() {
       }
       return;
     }
-    const liveRecs = data || [];
+    const liveRecs = (data || []).map(normalize);
     const merged = [...HIST_RECS, ...liveRecs];
     setRecs(merged);
   }
@@ -579,7 +622,7 @@ function App() {
               <div onClick={logout} style={{fontSize:10,color:"#94A8BA",cursor:"pointer",marginTop:2}} onMouseEnter={e=>e.target.style.color="#fff"} onMouseLeave={e=>e.target.style.color="#94A8BA"}>Sair</div>
             </div>
           </div>
-          <div>v2.4 · Supabase</div>
+          <div>v2.5 · Supabase</div>
           <div style={{color:"var(--green)",marginTop:3}}>● {recs.length} registros</div>
         </div>
       </aside>
