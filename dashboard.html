@@ -335,6 +335,21 @@ const Toast = ({msg,type,onClose}) => {
   return <div className={`toast ${type==="ok"?"tok":"ter"}`}>{msg}</div>;
 };
 
+/* Field component — definido FORA dos componentes que o usam para preservar
+   identidade entre renders (senão o React desmonta o input a cada tecla
+   digitada e o foco se perde) */
+const Field = ({label,field,type="text",opts=null,form,upd}) => (
+  <div className="field">
+    <label>{label}</label>
+    {opts
+      ? <select value={form[field]||""} onChange={e=>upd(field,e.target.value)}>
+          <option value="">— selecione —</option>
+          {opts.map(o=><option key={o}>{o}</option>)}
+        </select>
+      : <input type={type} value={form[field]||""} onChange={e=>upd(field,e.target.value)}/>}
+  </div>
+);
+
 const Bar = ({data,color="#1A6DC8",fmt}) => {
   const max=Math.max(...data.map(d=>d.v),1);
   return <div>{data.map((d,i)=>(
@@ -470,8 +485,20 @@ function App() {
     else setRecs(HIST_RECS);  /* sem sessão, mantém apenas histórico em memória (não há leitura do banco) */
   },[session]);
 
+  /* Carga inicial: mostra spinner durante a primeira requisição */
   async function load() {
     setLoading(true);
+    await fetchData();
+    setLoading(false);
+  }
+
+  /* Recarga silenciosa: atualiza dados em background SEM desmontar a tela.
+     Usado após salvar/excluir para que filtros, busca e scroll sejam preservados. */
+  async function refresh() {
+    await fetchData();
+  }
+
+  async function fetchData() {
     const {data,error}=await db.from("exportacoes").select("*").order("invoice");
     if(error) {
       if(error.message.includes("JWT") || error.code === "PGRST301") {
@@ -480,24 +507,23 @@ function App() {
       } else {
         notify("Erro: "+error.message,"err");
       }
-    } else {
-      const liveRecs = data || [];
-      const merged = [...HIST_RECS, ...liveRecs];
-      setRecs(merged);
+      return;
     }
-    setLoading(false);
+    const liveRecs = data || [];
+    const merged = [...HIST_RECS, ...liveRecs];
+    setRecs(merged);
   }
 
   async function save(rec) {
     const {error}=await db.from("exportacoes").upsert(rec,{onConflict:"invoice"});
     if(error){notify("Erro ao salvar: "+error.message,"err");return false;}
-    await load(); notify("Salvo com sucesso!"); return true;
+    await refresh(); notify("Salvo com sucesso!"); return true;
   }
 
   async function remove(invoice) {
     const {error}=await db.from("exportacoes").delete().eq("invoice",invoice);
     if(error){notify("Erro ao excluir","err");return;}
-    await load(); notify("Excluído.");
+    await refresh(); notify("Excluído.");
   }
 
   async function logout() {
@@ -553,7 +579,7 @@ function App() {
               <div onClick={logout} style={{fontSize:10,color:"#94A8BA",cursor:"pointer",marginTop:2}} onMouseEnter={e=>e.target.style.color="#fff"} onMouseLeave={e=>e.target.style.color="#94A8BA"}>Sair</div>
             </div>
           </div>
-          <div>v2.3 · Supabase</div>
+          <div>v2.4 · Supabase</div>
           <div style={{color:"var(--green)",marginTop:3}}>● {recs.length} registros</div>
         </div>
       </aside>
@@ -897,14 +923,6 @@ function PgBase({recs:allRecs,onSave,onDel,notify}) {
     await doSave(buildPayload());
   }
 
-  const F=({label,field,type="text",opts=null})=>(
-    <div className="field">
-      <label>{label}</label>
-      {opts?<select value={form[field]||""} onChange={e=>upd(field,e.target.value)}><option value="">— selecione —</option>{opts.map(o=><option key={o}>{o}</option>)}</select>
-           :<input type={type} value={form[field]||""} onChange={e=>upd(field,e.target.value)}/>}
-    </div>
-  );
-
   return <div className="page">
     <div className="ph">
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
@@ -943,16 +961,16 @@ function PgBase({recs:allRecs,onSave,onDel,notify}) {
         <div className="mh"><h3>{modal==="new"?"Novo Embarque":"Editar — INV "+modal.invoice}</h3><button className="btn bg2 bsm" onClick={()=>setModal(null)}>✕</button></div>
         <div className="mb2">
           <div className="st">Identificação</div>
-          <div className="fr mb16"><F label="Invoice *" field="invoice" type="number"/><F label="Mês Ref *" field="mes_ref" opts={ALL_MONTHS}/><F label="Cliente" field="cliente" opts={CLIENTES}/><F label="PO#" field="po"/><F label="NF" field="nf"/></div>
+          <div className="fr mb16"><Field label="Invoice *" field="invoice" type="number" form={form} upd={upd}/><Field label="Mês Ref *" field="mes_ref" opts={ALL_MONTHS} form={form} upd={upd}/><Field label="Cliente" field="cliente" opts={CLIENTES} form={form} upd={upd}/><Field label="PO#" field="po" form={form} upd={upd}/><Field label="NF" field="nf" form={form} upd={upd}/></div>
           <hr className="dv"/>
           <div className="st">Logística</div>
-          <div className="fr mb16"><F label="Porto de Carga" field="porto_carga" opts={PORTOS}/><F label="Destino" field="destino" opts={DESTINOS}/><F label="Navio" field="navio"/><F label="Container" field="container"/><F label="Booking" field="booking"/><F label="Transportadora" field="transportadora" opts={TRANSP}/></div>
+          <div className="fr mb16"><Field label="Porto de Carga" field="porto_carga" opts={PORTOS} form={form} upd={upd}/><Field label="Destino" field="destino" opts={DESTINOS} form={form} upd={upd}/><Field label="Navio" field="navio" form={form} upd={upd}/><Field label="Container" field="container" form={form} upd={upd}/><Field label="Booking" field="booking" form={form} upd={upd}/><Field label="Transportadora" field="transportadora" opts={TRANSP} form={form} upd={upd}/></div>
           <hr className="dv"/>
           <div className="st">Financeiro</div>
-          <div className="fr mb16"><F label="Valor USD" field="valor_usd" type="number"/><F label="Frete USD" field="frete_usd" type="number"/><F label="Agente" field="agente"/></div>
+          <div className="fr mb16"><Field label="Valor USD" field="valor_usd" type="number" form={form} upd={upd}/><Field label="Frete USD" field="frete_usd" type="number" form={form} upd={upd}/><Field label="Agente" field="agente" form={form} upd={upd}/></div>
           <hr className="dv"/>
           <div className="st">Documentação e Datas</div>
-          <div className="fr"><F label="ISF/DOCS" field="isf_docs" type="date"/><F label="BL" field="bl" type="date"/><F label="Status Doc" field="status_doc" opts={STATUS_DOC}/><F label="DL Carga" field="dl_carga" type="date"/><F label="Estufagem" field="estufagem" type="date"/><F label="ETA Pedido" field="eta_pedido" type="date"/><F label="Status" field="status" opts={STATUS_EMB}/></div>
+          <div className="fr"><Field label="ISF/DOCS" field="isf_docs" type="date" form={form} upd={upd}/><Field label="BL" field="bl" type="date" form={form} upd={upd}/><Field label="Status Doc" field="status_doc" opts={STATUS_DOC} form={form} upd={upd}/><Field label="DL Carga" field="dl_carga" type="date" form={form} upd={upd}/><Field label="Estufagem" field="estufagem" type="date" form={form} upd={upd}/><Field label="ETA Pedido" field="eta_pedido" type="date" form={form} upd={upd}/><Field label="Status" field="status" opts={STATUS_EMB} form={form} upd={upd}/></div>
           <div className="mac"><button className="btn bg2" onClick={()=>setModal(null)}>Cancelar</button><button className="btn bp" onClick={hSave} disabled={saving}>{saving?"Salvando...":"Salvar"}</button></div>
         </div>
       </div>
