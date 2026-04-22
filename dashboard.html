@@ -421,6 +421,87 @@ const Donut = ({data}) => {
   </div>;
 };
 
+/* Gráfico de linha temporal para séries longas (modo "TODOS") */
+const LineChart = ({data, fmt, height=220}) => {
+  const [hover,setHover]=useState(null);
+  if(!data||!data.length) return null;
+
+  const W=680, H=height, padL=60, padR=20, padT=20, padB=40;
+  const chartW=W-padL-padR, chartH=H-padT-padB;
+  const max=Math.max(...data.map(d=>d.v),1);
+  const n=data.length;
+
+  /* Posições X e Y */
+  const px = (i) => padL + (i/(n-1||1))*chartW;
+  const py = (v) => padT + chartH - (v/max)*chartH;
+
+  /* Polyline path */
+  const pts = data.map((d,i)=>`${px(i)},${py(d.v)}`).join(" ");
+
+  /* Area fill path */
+  const area = `M${px(0)},${py(0)} ${data.map((d,i)=>`L${px(i)},${py(d.v)}`).join(" ")} L${px(n-1)},${padT+chartH} L${px(0)},${padT+chartH} Z`;
+
+  /* Grid lines Y (5 linhas) */
+  const gridY = Array.from({length:5},(_, i)=>{
+    const val = max * (i+1)/5;
+    const y = py(val);
+    return {y, label: "$"+Math.round(val/1000)+"k"};
+  });
+
+  /* Labels X — mostrar apenas marcadores de ano (JAN de cada ano) */
+  const yearMarks = [];
+  let lastAno="";
+  data.forEach((d,i)=>{
+    if(d.ano && d.ano !== lastAno){
+      yearMarks.push({x:px(i), label:d.ano});
+      lastAno=d.ano;
+    }
+  });
+
+  return <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{overflow:"visible"}}
+    onMouseLeave={()=>setHover(null)}>
+    {/* Grid horizontal */}
+    {gridY.map((g,i)=><g key={i}>
+      <line x1={padL} y1={g.y} x2={W-padR} y2={g.y} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="4 3"/>
+      <text x={padL-8} y={g.y+4} textAnchor="end" fill="var(--text3)" fontSize="10" fontFamily="DM Sans,sans-serif">{g.label}</text>
+    </g>)}
+
+    {/* Eixo base */}
+    <line x1={padL} y1={padT+chartH} x2={W-padR} y2={padT+chartH} stroke="var(--border)" strokeWidth="0.5"/>
+
+    {/* Labels de ano no eixo X */}
+    {yearMarks.map((m,i)=><g key={i}>
+      <line x1={m.x} y1={padT+chartH} x2={m.x} y2={padT+chartH+6} stroke="var(--text3)" strokeWidth="0.5"/>
+      <text x={m.x} y={padT+chartH+20} textAnchor="middle" fill="var(--text2)" fontSize="10" fontWeight="500" fontFamily="DM Sans,sans-serif">{m.label}</text>
+    </g>)}
+
+    {/* Area preenchida */}
+    <path d={area} fill="var(--blue)" opacity="0.08"/>
+
+    {/* Linha principal */}
+    <polyline points={pts} fill="none" stroke="var(--blue)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+
+    {/* Hit areas invisíveis + pontos + tooltip */}
+    {data.map((d,i)=>{
+      const cx=px(i), cy_=py(d.v);
+      const isHover = hover===i;
+      return <g key={i}>
+        <rect x={cx-Math.max(chartW/n/2,4)} y={padT} width={Math.max(chartW/n,8)} height={chartH}
+          fill="transparent" onMouseEnter={()=>setHover(i)} style={{cursor:"crosshair"}}/>
+        {isHover&&<>
+          <line x1={cx} y1={padT} x2={cx} y2={padT+chartH} stroke="var(--blue)" strokeWidth="0.5" strokeDasharray="3 3" opacity="0.5"/>
+          <circle cx={cx} cy={cy_} r={4} fill="var(--blue)" stroke="#fff" strokeWidth="2"/>
+          <g>
+            <rect x={cx-48} y={cy_-36} width={96} height={28} rx={6} fill="var(--text)" opacity="0.9"/>
+            <text x={cx} y={cy_-22} textAnchor="middle" fill="#fff" fontSize="10" fontFamily="DM Sans,sans-serif" fontWeight="500">{d.full||d.l}</text>
+            <text x={cx} y={cy_-12} textAnchor="middle" fill="#fff" fontSize="10" fontFamily="DM Sans,sans-serif" opacity="0.8">{fmt?fmt(d.v):d.v}</text>
+          </g>
+        </>}
+      </g>;
+    })}
+  </svg>;
+};
+
 const IC = {
   dash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
   ops:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="12" y2="16"/></svg>,
@@ -714,6 +795,20 @@ function PgDash({recs}) {
     return Object.entries(m).sort(([,a],[,b])=>MESES.indexOf(a.mes)-MESES.indexOf(b.mes)).map(([,v])=>({l:v.mes.slice(0,3)+"/"+v.ano.slice(2),v:v.v}));
   },[fil]);
 
+  /* Série cronológica para gráfico de linha (modo TODOS) */
+  const byMonthChrono=useMemo(()=>{
+    if(yr!=="TODOS") return [];
+    const m={};
+    fil.forEach(r=>{
+      const k=r.mes_ref||"?";
+      if(!m[k]) m[k]={v:0,mes:k.split(" ")[0],ano:k.split(" ")[1]||""};
+      m[k].v+=r.valor_usd||0;
+    });
+    return Object.entries(m)
+      .map(([k,v])=>({l:v.mes.slice(0,3)+"/"+v.ano.slice(2),v:v.v,ano:v.ano,mesIdx:MESES.indexOf(v.mes),full:k}))
+      .sort((a,b)=>a.ano===b.ano?a.mesIdx-b.mesIdx:a.ano.localeCompare(b.ano));
+  },[fil,yr]);
+
   const byCli=useMemo(()=>{
     const m={};fil.forEach(r=>{const c=r.cliente||"—";m[c]=(m[c]||0)+(r.valor_usd||0);});
     return Object.entries(m).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}));
@@ -757,14 +852,25 @@ function PgDash({recs}) {
       <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(fret)}</div><div className="ks">{fat?((fret/fat)*100).toFixed(1)+"%":"—"} do fat.</div><YoY cur={fret} prev={fretPrev} invert={true}/></div>
       <div className="kp"><div className="kl">Clientes</div><div className="kv gr">{byCli.length}</div><div className="ks">no período</div></div>
     </div>
-    <div className="g2 mb20">
-      <div className="card"><div className="ct">Faturamento por Mês</div><Bar data={byMonth} fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
-      <div className="card"><div className="ct">Faturamento por Cliente</div><Bar data={byCli} color="#D97706" fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
-    </div>
-    <div className="g2 mb20">
-      <div className="card"><div className="ct">Destinos (containers)</div><Donut data={byDst}/></div>
-      <div className="card"><div className="ct">Status Documentação</div><Donut data={docSt}/></div>
-    </div>
+    {yr==="TODOS" ? <>
+      <div className="card mb20">
+        <div className="ct">Evolução mensal do faturamento (2015 – presente)</div>
+        <LineChart data={byMonthChrono} fmt={v=>"$"+Math.round(v/1000)+"k"} height={260}/>
+      </div>
+      <div className="g2 mb20">
+        <div className="card"><div className="ct">Faturamento por Cliente</div><Bar data={byCli} color="#D97706" fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
+        <div className="card"><div className="ct">Destinos (containers)</div><Donut data={byDst}/></div>
+      </div>
+    </> : <>
+      <div className="g2 mb20">
+        <div className="card"><div className="ct">Faturamento por Mês</div><Bar data={byMonth} fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
+        <div className="card"><div className="ct">Faturamento por Cliente</div><Bar data={byCli} color="#D97706" fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
+      </div>
+      <div className="g2 mb20">
+        <div className="card"><div className="ct">Destinos (containers)</div><Donut data={byDst}/></div>
+        <div className="card"><div className="ct">Status Documentação</div><Donut data={docSt}/></div>
+      </div>
+    </>}
     <div className="card">
       <div className="ct">Histórico Anual (2015 – presente)</div>
       <div className="tw"><table>
