@@ -503,6 +503,18 @@ function App() {
   const [toast,setToast]=useState(null);
   const notify=useCallback((msg,type="ok")=>setToast({msg,type}),[]);
 
+  /* Estado persistente dos meses selecionados (sobrevive à troca de abas) */
+  const _now=new Date(),_ci=_now.getMonth(),_cy=String(_now.getFullYear());
+  const _pi=_ci===0?11:_ci-1, _py=_ci===0?String(_now.getFullYear()-1):_cy;
+  const _ni=(_ci+1)%12, _ny=_ci===11?String(_now.getFullYear()+1):_cy;
+  const _n2=(_ci+2)%12, _n2y=_ci>=10?String(_now.getFullYear()+1):_cy;
+  const [opsAnt,setOpsAnt]=useState(MESES[_pi]+" "+_py);
+  const [opsVig,setOpsVig]=useState(MESES[_ci]+" "+_cy);
+  const [opsSeg,setOpsSeg]=useState(MESES[_ni]+" "+_ny);
+  const [cartM1,setCartM1]=useState(MESES[_ci]+" "+_cy);
+  const [cartM2,setCartM2]=useState(MESES[_ni]+" "+_ny);
+  const [cartM3,setCartM3]=useState(MESES[_n2]+" "+_n2y);
+
   /* Restaurar sessão salva ao iniciar e escutar mudanças de auth */
   useEffect(()=>{
     db.auth.getSession().then(({data})=>{
@@ -629,8 +641,8 @@ function App() {
           ? <div className="lw"><div className="spin2"/></div>
           : <>
               {pg==="dash" && <PgDash recs={recs}/>}
-              {pg==="ops"  && <PgOps  recs={recs}/>}
-              {pg==="cart" && <PgCart recs={recs}/>}
+              {pg==="ops"  && <PgOps  recs={recs} ant={opsAnt} setAnt={setOpsAnt} vig={opsVig} setVig={setOpsVig} seg={opsSeg} setSeg={setOpsSeg}/>}
+              {pg==="cart" && <PgCart recs={recs} m1={cartM1} setM1={setCartM1} m2={cartM2} setM2={setCartM2} m3={cartM3} setM3={setCartM3}/>}
               {pg==="base" && <PgBase recs={recs} onSave={save} onDel={remove} notify={notify}/>}
               {pg==="rel"  && <PgRel  recs={recs}/>}
             </>
@@ -779,14 +791,8 @@ function PgDash({recs}) {
 /* ══════════════════════════════════════════
    OPERACIONAL
 ══════════════════════════════════════════ */
-function PgOps({recs}) {
-  const now=new Date(),ci=now.getMonth(),cy=String(now.getFullYear());
-  const pi=ci===0?11:ci-1, py=ci===0?String(now.getFullYear()-1):cy;
-  const ni=(ci+1)%12, ny=ci===11?String(now.getFullYear()+1):cy;
+function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
   const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
-  const [ant,setAnt]=useState(MESES[pi]+" "+py);
-  const [vig,setVig]=useState(MESES[ci]+" "+cy);
-  const [seg,setSeg]=useState(MESES[ni]+" "+ny);
 
   function getRows(mes){ return recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0)); }
 
@@ -900,14 +906,8 @@ function PgOps({recs}) {
 /* ══════════════════════════════════════════
    CARTEIRA — compact table layout
 ══════════════════════════════════════════ */
-function PgCart({recs}) {
-  const now=new Date(),ci=now.getMonth(),cy=String(now.getFullYear());
-  const ni=(ci+1)%12, ny=ci===11?String(now.getFullYear()+1):cy;
-  const n2=(ci+2)%12, n2y=ci>=10?String(now.getFullYear()+1):cy;
+function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
   const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
-  const [m1,setM1]=useState(MESES[ci]+" "+cy);
-  const [m2,setM2]=useState(MESES[ni]+" "+ny);
-  const [m3,setM3]=useState(MESES[n2]+" "+n2y);
 
   function getCartRows(mes){ return recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0)); }
 
