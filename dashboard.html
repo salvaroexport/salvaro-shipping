@@ -48,7 +48,7 @@ const DESTINOS   = ["CHARLESTON","BALTIMORE","HOUSTON","JACKSONVILLE","SAVANNAH"
 const PORTOS     = ["IMBITUBA","ITAJAI","PARANAGUÁ","SANTOS","ITAPOA"];
 const TRANSP     = ["TIS","KAIROS","ELITE","RIO BRANCO","DHL"];
 const STATUS_DOC = ["PENDENTE","FALTA BL","COMPLETO"];
-const STATUS_EMB = ["EM PRODUÇÃO","AGD ESTUFAGEM","EMBARCADO","EM TRÂNSITO","ENTREGUE"];
+const STATUS_EMB = ["CARTEIRA","EM PRODUÇÃO","AGD ESTUFAGEM","NO PORTO","EMBARCADO","ENTREGUE","SINISTRO","CANCELADO"];
 const MESES      = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];
 const ANOS       = ["2025","2026","2027"];
 const ALL_MONTHS = ANOS.flatMap(a => MESES.map(m => m + " " + a));
@@ -90,12 +90,25 @@ const NORM_PORTO = {
   "CRICIUMA":"CRICIUMA",
 };
 
+/* Normalização de status de embarque */
+const NORM_STATUS = {
+  "DELIVERED":"ENTREGUE","ENTREGUE":"ENTREGUE",
+  "IN TRANSIT":"EMBARCADO","EM TRÂNSITO":"EMBARCADO",
+  "AT PORT":"NO PORTO","DISCHARGED":"NO PORTO",
+  "AWAITING LOAD":"AGD ESTUFAGEM",
+  "STATUS":"","AMOSTRA":"","status":"",
+  "SINISTRO":"SINISTRO","CANCELADO":"CANCELADO",
+  "EM PRODUÇÃO":"EM PRODUÇÃO","AGD ESTUFAGEM":"AGD ESTUFAGEM",
+  "NO PORTO":"NO PORTO","EMBARCADO":"EMBARCADO","CARTEIRA":"CARTEIRA"
+};
+
 function normalize(rec) {
   const r = {...rec};
   if(r.cliente) r.cliente = NORM_CLIENTE[r.cliente] || r.cliente;
   if(r.destino) r.destino = NORM_DESTINO[r.destino] || r.destino;
   if(r.porto_origem) r.porto_origem = NORM_PORTO[r.porto_origem] || r.porto_origem;
   if(r.porto_carga) r.porto_carga = NORM_PORTO[r.porto_carga] || r.porto_carga;
+  if(r.status) r.status = NORM_STATUS[r.status] !== undefined ? NORM_STATUS[r.status] : r.status;
   return r;
 }
 
@@ -304,6 +317,8 @@ td.m{color:var(--text2)} td.r{text-align:right;font-variant-numeric:tabular-nums
 .bgb{background:#DBEAFE;color:#1E40AF;border:1px solid #BFDBFE}
 .bgo{background:#FFEDD5;color:#9A3412;border:1px solid #FED7AA}
 .bgg{background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB}
+.bgcart{background:#EDE9FE;color:#5B21B6;border:1px solid #DDD6FE}
+.bgprod{background:#E0F2FE;color:#075985;border:1px solid #BAE6FD}
 .field{display:flex;flex-direction:column;gap:5px}
 .field label{font-size:10.5px;font-weight:600;color:var(--text2);letter-spacing:.5px;text-transform:uppercase}
 .field input,.field select{background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 11px;color:var(--text);font-family:"DM Sans",sans-serif;font-size:13px;outline:none;transition:border-color .15s;width:100%}
@@ -362,7 +377,11 @@ const DocBadge = ({v}) => {
 };
 const EmbBadge = ({v}) => {
   if(!v) return <span className="badge bgg">—</span>;
-  const m={EMBARCADO:"bgb","EM TRÂNSITO":"bgo","EM PRODUÇÃO":"bgg","AGD ESTUFAGEM":"bgy",ENTREGUE:"bge"};
+  const m={
+    "CARTEIRA":"bgcart","EM PRODUÇÃO":"bgprod","AGD ESTUFAGEM":"bgy",
+    "NO PORTO":"bgo","EMBARCADO":"bgb","ENTREGUE":"bge",
+    "SINISTRO":"bgr","CANCELADO":"bgr"
+  };
   return <span className={`badge ${m[v]||"bgg"}`}>{v}</span>;
 };
 
