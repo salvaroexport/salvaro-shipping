@@ -1288,6 +1288,16 @@ function PgRel({recs}) {
     return {list,tot};
   },[recs,yr]);
 
+  /* Dados do ano anterior para comparação mês a mês */
+  const prevYrRel = String(parseInt(yr)-1);
+  const annualPrev=useMemo(()=>{
+    const rows=recs.filter(r=>r.mes_ref?.includes(prevYrRel));
+    const bM={};MESES.forEach(m=>{bM[m]={fat:0,cnt:0,fret:0}});
+    rows.forEach(r=>{const m=r.mes_ref?.split(" ")[0];if(m&&bM[m]){bM[m].fat+=r.valor_usd||0;bM[m].fret+=r.frete_usd||0;bM[m].cnt++;}});
+    const tot={fat:rows.reduce((s,r)=>s+(r.valor_usd||0),0),cnt:rows.length,fret:rows.reduce((s,r)=>s+(r.frete_usd||0),0)};
+    return {byMes:bM,tot};
+  },[recs,prevYrRel]);
+
   const allYearKeys = useMemo(()=>{
     const s=new Set();
     recs.forEach(r=>{const y=r.mes_ref?.split(" ")[1];if(y)s.add(y);});
@@ -1378,27 +1388,47 @@ function PgRel({recs}) {
         <button className="btn bg2 bsm" onClick={()=>csv(annual.list.map(r=>({Mês:r.m,Containers:r.cnt,Faturamento:r.fat.toFixed(2),Frete:r.fret.toFixed(2)})),"anual_"+yr+".csv")}>↓ CSV</button>
       </div>
       <div className="kg">
-        <div className="kp hi"><div className="kl">Faturamento {yr}</div><div className="kv tc" style={{fontSize:20}}>{fmtUSD(annual.tot.fat)}</div></div>
-        <div className="kp"><div className="kl">Containers</div><div className="kv">{annual.tot.cnt}</div></div>
-        <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(annual.tot.fret)}</div></div>
+        <div className="kp hi"><div className="kl">Faturamento {yr}</div><div className="kv tc" style={{fontSize:20}}>{fmtUSD(annual.tot.fat)}</div><YoYBadge cur={annual.tot.fat} prev={annualPrev.tot.fat} label={prevYrRel}/></div>
+        <div className="kp"><div className="kl">Containers</div><div className="kv">{annual.tot.cnt}</div><YoYBadge cur={annual.tot.cnt} prev={annualPrev.tot.cnt} label={prevYrRel}/></div>
+        <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(annual.tot.fret)}</div><YoYBadge cur={annual.tot.fret} prev={annualPrev.tot.fret} label={prevYrRel} invert={true}/></div>
         <div className="kp"><div className="kl">Média/CNTR</div><div className="kv gc" style={{fontSize:20}}>{fmtUSD(annual.tot.cnt?annual.tot.fat/annual.tot.cnt:0)}</div></div>
       </div>
       <div className="card mb20"><div className="ct">Evolução Mensal</div><Bar data={annual.list.map(r=>({l:r.m.slice(0,3),v:r.fat}))} fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
       <div className="card">
-        <div className="ct">Resumo por Mês — {yr}</div>
+        <div className="ct">Resumo por Mês — {yr} vs {prevYrRel}</div>
         <div className="tw"><table>
-          <thead><tr><th>Mês</th><th>Containers</th><th>Faturamento</th><th>Frete</th><th>Média/CNTR</th><th>% Frete/Fat</th></tr></thead>
+          <thead><tr>
+            <th>Mês</th>
+            <th>CNTR {yr.slice(2)}</th><th>Fat. {yr.slice(2)}</th><th>Frete {yr.slice(2)}</th>
+            <th style={{borderLeft:"2px solid var(--border)",paddingLeft:10}}>CNTR {prevYrRel.slice(2)}</th><th>Fat. {prevYrRel.slice(2)}</th>
+            <th>Δ Fat.</th>
+          </tr></thead>
           <tbody>
-            {annual.list.map(r=><tr key={r.m}>
-              <td><strong>{r.m}</strong></td><td className="r">{r.cnt}</td><td className="r">{fmtUSD(r.fat)}</td>
-              <td className="r">{fmtUSD(r.fret)}</td><td className="r">{fmtUSD(r.cnt?r.fat/r.cnt:0)}</td>
-              <td className="r">{r.fat?((r.fret/r.fat)*100).toFixed(1)+"%":"—"}</td>
-            </tr>)}
-            <tr style={{background:"#EBF4FE",fontWeight:700}}>
-              <td><strong>TOTAL</strong></td><td className="r">{annual.tot.cnt}</td><td className="r">{fmtUSD(annual.tot.fat)}</td>
-              <td className="r">{fmtUSD(annual.tot.fret)}</td><td className="r">{fmtUSD(annual.tot.cnt?annual.tot.fat/annual.tot.cnt:0)}</td>
-              <td className="r">{annual.tot.fat?((annual.tot.fret/annual.tot.fat)*100).toFixed(1)+"%":"—"}</td>
-            </tr>
+            {annual.list.map(r=>{
+              const p=annualPrev.byMes[r.m]||{fat:0,cnt:0,fret:0};
+              const yoy=p.fat>0?((r.fat/p.fat)-1)*100:null;
+              const yoyColor=yoy===null?"var(--text3)":yoy>=0?"#059669":"#DC2626";
+              const yoyStr=yoy===null?"—":(yoy>=0?"+":"")+yoy.toFixed(1)+"%";
+              return <tr key={r.m}>
+                <td><strong>{r.m}</strong></td>
+                <td className="r">{r.cnt}</td><td className="r">{fmtUSD(r.fat)}</td><td className="r">{fmtUSD(r.fret)}</td>
+                <td className="r" style={{borderLeft:"2px solid var(--border)",paddingLeft:10,color:"var(--text2)"}}>{p.cnt||"—"}</td>
+                <td className="r" style={{color:"var(--text2)"}}>{p.fat?fmtUSD(p.fat):"—"}</td>
+                <td className="r" style={{color:yoyColor,fontWeight:600,fontSize:12}}>{yoyStr}</td>
+              </tr>;
+            })}
+            {(()=>{
+              const yoyTot=annualPrev.tot.fat>0?((annual.tot.fat/annualPrev.tot.fat)-1)*100:null;
+              const yoyTotColor=yoyTot===null?"var(--text3)":yoyTot>=0?"#059669":"#DC2626";
+              const yoyTotStr=yoyTot===null?"—":(yoyTot>=0?"+":"")+yoyTot.toFixed(1)+"%";
+              return <tr style={{background:"#EBF4FE",fontWeight:700}}>
+                <td><strong>TOTAL</strong></td>
+                <td className="r">{annual.tot.cnt}</td><td className="r">{fmtUSD(annual.tot.fat)}</td><td className="r">{fmtUSD(annual.tot.fret)}</td>
+                <td className="r" style={{borderLeft:"2px solid var(--border)",paddingLeft:10}}>{annualPrev.tot.cnt||"—"}</td>
+                <td className="r">{annualPrev.tot.fat?fmtUSD(annualPrev.tot.fat):"—"}</td>
+                <td className="r" style={{color:yoyTotColor,fontWeight:700,fontSize:12}}>{yoyTotStr}</td>
+              </tr>;
+            })()}
           </tbody>
         </table></div>
       </div>
