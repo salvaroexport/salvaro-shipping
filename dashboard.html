@@ -665,6 +665,37 @@ function PgDash({recs}) {
   const fret=fil.reduce((s,r)=>s+(r.frete_usd||0),0);
   const cnt=fil.length;
 
+  /* ── YoY: mesmo período do ano anterior ── */
+  const prevYr = yr==="TODOS"?null:String(parseInt(yr)-1);
+  const filPrev = useMemo(()=>{
+    if(!prevYr) return [];
+    /* Se estamos no meio do ano, comparar até o último mês disponível do ano atual */
+    const mesesAtual = new Set(fil.map(r=>r.mes_ref?.split(" ")[0]).filter(Boolean));
+    return recs.filter(r=>{
+      if(!r.mes_ref?.includes(prevYr)) return false;
+      const mes = r.mes_ref.split(" ")[0];
+      return mesesAtual.has(mes);
+    });
+  },[recs,yr,prevYr,fil]);
+  const fatPrev=filPrev.reduce((s,r)=>s+(r.valor_usd||0),0);
+  const fretPrev=filPrev.reduce((s,r)=>s+(r.frete_usd||0),0);
+  const cntPrev=filPrev.length;
+
+  /* Badge de variação YoY */
+  const YoY = ({cur, prev, invert=false}) => {
+    if(!prev || !prevYr || yr==="TODOS") return null;
+    const pct = ((cur/prev)-1)*100;
+    const up = pct >= 0;
+    const good = invert ? !up : up;
+    const color = good ? "#059669" : "#DC2626";
+    const arrow = up ? "▲" : "▼";
+    return <div style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:11,fontWeight:600,color,marginTop:4}}>
+      <span>{arrow}</span>
+      <span>{Math.abs(pct).toFixed(1)}%</span>
+      <span style={{fontWeight:400,color:"var(--text3)",fontSize:10}}>vs {prevYr}</span>
+    </div>;
+  };
+
   const byMonth=useMemo(()=>{
     const m={};
     fil.forEach(r=>{const k=r.mes_ref||"?";if(!m[k])m[k]={v:0,mes:k.split(" ")[0],ano:k.split(" ")[1]||""};m[k].v+=r.valor_usd||0;});
@@ -709,10 +740,10 @@ function PgDash({recs}) {
       </div>
     </div>
     <div className="kg">
-      <div className="kp hi"><div className="kl">Faturamento USD</div><div className="kv tc" style={{fontSize:20}}>{fmtUSD(fat)}</div><div className="ks">{yr}</div></div>
-      <div className="kp"><div className="kl">Containers</div><div className="kv">{cnt}</div><div className="ks">embarques</div></div>
-      <div className="kp"><div className="kl">Média / CNTR</div><div className="kv gc" style={{fontSize:20}}>{fmtUSD(cnt?fat/cnt:0)}</div></div>
-      <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(fret)}</div><div className="ks">{fat?((fret/fat)*100).toFixed(1)+"%":"—"} do fat.</div></div>
+      <div className="kp hi"><div className="kl">Faturamento USD</div><div className="kv tc" style={{fontSize:20}}>{fmtUSD(fat)}</div><div className="ks">{yr}</div><YoY cur={fat} prev={fatPrev}/></div>
+      <div className="kp"><div className="kl">Containers</div><div className="kv">{cnt}</div><div className="ks">embarques</div><YoY cur={cnt} prev={cntPrev}/></div>
+      <div className="kp"><div className="kl">Média / CNTR</div><div className="kv gc" style={{fontSize:20}}>{fmtUSD(cnt?fat/cnt:0)}</div><YoY cur={cnt?fat/cnt:0} prev={cntPrev?fatPrev/cntPrev:0}/></div>
+      <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(fret)}</div><div className="ks">{fat?((fret/fat)*100).toFixed(1)+"%":"—"} do fat.</div><YoY cur={fret} prev={fretPrev} invert={true}/></div>
       <div className="kp"><div className="kl">Clientes</div><div className="kv gr">{byCli.length}</div><div className="ks">no período</div></div>
     </div>
     <div className="g2 mb20">
@@ -726,15 +757,21 @@ function PgDash({recs}) {
     <div className="card">
       <div className="ct">Histórico Anual (2015 – presente)</div>
       <div className="tw"><table>
-        <thead><tr><th>Ano</th><th>Faturamento</th><th>Containers</th><th>Média/CNTR</th><th>Frete Total</th><th>% Frete/Fat</th></tr></thead>
-        <tbody>{annual.map(r=>(
-          <tr key={r.ano} style={r.ano>="2025"?{fontWeight:500}:{}}>
+        <thead><tr><th>Ano</th><th>Faturamento</th><th>Δ YoY</th><th>Containers</th><th>Média/CNTR</th><th>Frete Total</th><th>% Frete/Fat</th></tr></thead>
+        <tbody>{annual.map((r,i)=>{
+          const prev = i>0 ? annual[i-1] : null;
+          const yoy = prev && prev.fat>0 ? ((r.fat/prev.fat)-1)*100 : null;
+          const yoyColor = yoy===null ? "var(--text3)" : yoy>=0 ? "#059669" : "#DC2626";
+          const yoyStr = yoy===null ? "—" : (yoy>=0?"+":"")+yoy.toFixed(1)+"%";
+          return <tr key={r.ano} style={r.ano>="2025"?{fontWeight:500}:{}}>
             <td><strong>{r.ano}</strong>{r.ano<"2025"&&<span style={{fontSize:10,color:"#94A8BA",marginLeft:6}}>hist.</span>}</td>
-            <td className="r">{fmtUSD(r.fat)}</td><td className="r">{r.cnt}</td>
+            <td className="r">{fmtUSD(r.fat)}</td>
+            <td className="r" style={{color:yoyColor,fontWeight:500,fontSize:12}}>{yoyStr}</td>
+            <td className="r">{r.cnt}</td>
             <td className="r">{fmtUSD(r.cnt?r.fat/r.cnt:0)}</td><td className="r">{fmtUSD(r.fret)}</td>
             <td className="r">{r.fat?((r.fret/r.fat)*100).toFixed(1)+"%":"—"}</td>
-          </tr>
-        ))}</tbody>
+          </tr>;
+        })}</tbody>
       </table></div>
     </div>
   </div>;
@@ -1067,6 +1104,27 @@ function PgRel({recs}) {
     return {rows,fat,fret,cnt:rows.length,bC,bD};
   },[recs,mes]);
 
+  /* YoY para o mês selecionado: mesmo mês do ano anterior */
+  const monthlyPrev=useMemo(()=>{
+    const parts=mes.split(" ");if(parts.length<2)return{fat:0,fret:0,cnt:0};
+    const prevMes=parts[0]+" "+String(parseInt(parts[1])-1);
+    const rows=recs.filter(r=>r.mes_ref===prevMes);
+    return {fat:rows.reduce((s,r)=>s+(r.valor_usd||0),0),fret:rows.reduce((s,r)=>s+(r.frete_usd||0),0),cnt:rows.length,label:prevMes};
+  },[recs,mes]);
+
+  const YoYBadge = ({cur, prev, label, invert=false}) => {
+    if(!prev || prev===0) return null;
+    const pct = ((cur/prev)-1)*100;
+    const up = pct >= 0;
+    const good = invert ? !up : up;
+    const color = good ? "#059669" : "#DC2626";
+    const arrow = up ? "▲" : "▼";
+    return <div style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:11,fontWeight:600,color,marginTop:4}}>
+      <span>{arrow}</span><span>{Math.abs(pct).toFixed(1)}%</span>
+      {label&&<span style={{fontWeight:400,color:"var(--text3)",fontSize:10}}>vs {label}</span>}
+    </div>;
+  };
+
   const annual=useMemo(()=>{
     const rows=recs.filter(r=>r.mes_ref?.includes(yr));
     const bM={};MESES.forEach(m=>{bM[m]={fat:0,cnt:0,fret:0}});
@@ -1137,9 +1195,9 @@ function PgRel({recs}) {
         <button className="btn bg2 bsm" onClick={()=>csv(monthly.rows,"relatorio_"+mes.replace(" ","_")+".csv")}>↓ CSV</button>
       </div>
       <div className="kg">
-        <div className="kp hi"><div className="kl">Faturamento</div><div className="kv tc" style={{fontSize:20}}>{fmtUSD(monthly.fat)}</div></div>
-        <div className="kp"><div className="kl">Containers</div><div className="kv">{monthly.cnt}</div></div>
-        <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(monthly.fret)}</div></div>
+        <div className="kp hi"><div className="kl">Faturamento</div><div className="kv tc" style={{fontSize:20}}>{fmtUSD(monthly.fat)}</div><YoYBadge cur={monthly.fat} prev={monthlyPrev.fat} label={monthlyPrev.label}/></div>
+        <div className="kp"><div className="kl">Containers</div><div className="kv">{monthly.cnt}</div><YoYBadge cur={monthly.cnt} prev={monthlyPrev.cnt} label={monthlyPrev.label}/></div>
+        <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(monthly.fret)}</div><YoYBadge cur={monthly.fret} prev={monthlyPrev.fret} label={monthlyPrev.label} invert={true}/></div>
         <div className="kp"><div className="kl">Média/CNTR</div><div className="kv gc" style={{fontSize:20}}>{fmtUSD(monthly.cnt?monthly.fat/monthly.cnt:0)}</div></div>
       </div>
       <div className="g2 mb20">
