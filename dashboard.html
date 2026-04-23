@@ -597,23 +597,51 @@ function Login({onLogin, notify}) {
 function App() {
   const [session,setSession]=useState(null);
   const [authChecking,setAuthChecking]=useState(true);
-  const [pg,setPg]=useState("dash");
   const [recs,setRecs]=useState([]);
   const [loading,setLoading]=useState(false);
   const [toast,setToast]=useState(null);
   const notify=useCallback((msg,type="ok")=>setToast({msg,type}),[]);
 
-  /* Estado persistente dos meses selecionados (sobrevive à troca de abas) */
+  /* ── Hook de persistência: sincroniza estado com localStorage ── */
+  function usePersist(key, defaultVal) {
+    const [val, setVal] = useState(() => {
+      try { const s = localStorage.getItem("sv_"+key); return s !== null ? JSON.parse(s) : defaultVal; }
+      catch { return defaultVal; }
+    });
+    const set = useCallback(v => {
+      setVal(v);
+      try { localStorage.setItem("sv_"+key, JSON.stringify(v)); } catch {}
+    },[key]);
+    return [val, set];
+  }
+
+  /* ── Estados persistentes de todos os filtros ── */
   const _now=new Date(),_ci=_now.getMonth(),_cy=String(_now.getFullYear());
   const _pi=_ci===0?11:_ci-1, _py=_ci===0?String(_now.getFullYear()-1):_cy;
   const _ni=(_ci+1)%12, _ny=_ci===11?String(_now.getFullYear()+1):_cy;
   const _n2=(_ci+2)%12, _n2y=_ci>=10?String(_now.getFullYear()+1):_cy;
-  const [opsAnt,setOpsAnt]=useState(MESES[_pi]+" "+_py);
-  const [opsVig,setOpsVig]=useState(MESES[_ci]+" "+_cy);
-  const [opsSeg,setOpsSeg]=useState(MESES[_ni]+" "+_ny);
-  const [cartM1,setCartM1]=useState(MESES[_ci]+" "+_cy);
-  const [cartM2,setCartM2]=useState(MESES[_ni]+" "+_ny);
-  const [cartM3,setCartM3]=useState(MESES[_n2]+" "+_n2y);
+
+  /* Aba ativa */
+  const [pg,setPg]=usePersist("pg","dash");
+  /* Operacional - 3 meses */
+  const [opsAnt,setOpsAnt]=usePersist("opsAnt",MESES[_pi]+" "+_py);
+  const [opsVig,setOpsVig]=usePersist("opsVig",MESES[_ci]+" "+_cy);
+  const [opsSeg,setOpsSeg]=usePersist("opsSeg",MESES[_ni]+" "+_ny);
+  /* Carteira - 3 meses */
+  const [cartM1,setCartM1]=usePersist("cartM1",MESES[_ci]+" "+_cy);
+  const [cartM2,setCartM2]=usePersist("cartM2",MESES[_ni]+" "+_ny);
+  const [cartM3,setCartM3]=usePersist("cartM3",MESES[_n2]+" "+_n2y);
+  /* Dashboard - ano */
+  const [dashYr,setDashYr]=usePersist("dashYr","2026");
+  /* Base de Dados - filtros */
+  const [baseQ,setBaseQ]=usePersist("baseQ","");
+  const [baseFC,setBaseFC]=usePersist("baseFC","");
+  const [baseFM,setBaseFM]=usePersist("baseFM","");
+  const [baseFD,setBaseFD]=usePersist("baseFD","");
+  /* Relatórios - tab, ano, mês */
+  const [relTab,setRelTab]=usePersist("relTab","mensal");
+  const [relYr,setRelYr]=usePersist("relYr","2026");
+  const [relMes,setRelMes]=usePersist("relMes","ABRIL 2026");
 
   /* Restaurar sessão salva ao iniciar e escutar mudanças de auth */
   useEffect(()=>{
@@ -740,11 +768,11 @@ function App() {
         {loading
           ? <div className="lw"><div className="spin2"/></div>
           : <>
-              {pg==="dash" && <PgDash recs={recs}/>}
+              {pg==="dash" && <PgDash recs={recs} yr={dashYr} setYr={setDashYr}/>}
               {pg==="ops"  && <PgOps  recs={recs} ant={opsAnt} setAnt={setOpsAnt} vig={opsVig} setVig={setOpsVig} seg={opsSeg} setSeg={setOpsSeg}/>}
               {pg==="cart" && <PgCart recs={recs} m1={cartM1} setM1={setCartM1} m2={cartM2} setM2={setCartM2} m3={cartM3} setM3={setCartM3}/>}
-              {pg==="base" && <PgBase recs={recs} onSave={save} onDel={remove} notify={notify}/>}
-              {pg==="rel"  && <PgRel  recs={recs}/>}
+              {pg==="base" && <PgBase recs={recs} onSave={save} onDel={remove} notify={notify} q={baseQ} setQ={setBaseQ} fC={baseFC} setFC={setBaseFC} fM={baseFM} setFM={setBaseFM} fD={baseFD} setFD={setBaseFD}/>}
+              {pg==="rel"  && <PgRel  recs={recs} tab={relTab} setTab={setRelTab} yr={relYr} setYr={setRelYr} mes={relMes} setMes={setRelMes}/>}
             </>
         }
       </main>
@@ -756,8 +784,7 @@ function App() {
 /* ══════════════════════════════════════════
    DASHBOARD
 ══════════════════════════════════════════ */
-function PgDash({recs}) {
-  const [yr,setYr]=useState("2026");
+function PgDash({recs, yr, setYr}) {
 
   /* merge live data with historical */
   /* Agregar totais anuais diretamente a partir de recs (que já inclui HIST_RECS + live).
@@ -1114,10 +1141,9 @@ function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
 /* ══════════════════════════════════════════
    BASE DE DADOS
 ══════════════════════════════════════════ */
-function PgBase({recs:allRecs,onSave,onDel,notify}) {
+function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, fD,setFD}) {
   /* Base de dados editável só mostra registros ao vivo (não-históricos) */
   const recs = useMemo(()=>allRecs.filter(r=>!r._hist),[allRecs]);
-  const [q,setQ]=useState(""); const [fC,setFC]=useState(""); const [fM,setFM]=useState(""); const [fD,setFD]=useState("");
   const [modal,setModal]=useState(null); const [del,setDel]=useState(null); const [saving,setSaving]=useState(false);
   const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
   const fil=useMemo(()=>recs.filter(r=>{
@@ -1264,10 +1290,7 @@ function PgBase({recs:allRecs,onSave,onDel,notify}) {
 /* ══════════════════════════════════════════
    RELATÓRIOS
 ══════════════════════════════════════════ */
-function PgRel({recs}) {
-  const [tab,setTab]=useState("mensal");
-  const [yr,setYr]=useState("2026");
-  const [mes,setMes]=useState("ABRIL 2026");
+function PgRel({recs, tab, setTab, yr, setYr, mes, setMes}) {
   const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
 
   const monthly=useMemo(()=>{
