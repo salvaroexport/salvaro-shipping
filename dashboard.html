@@ -8,7 +8,7 @@
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <style>
@@ -134,49 +134,63 @@ function xlInt(v) { if(v===null||v===undefined||v==="") return ""; const s=Strin
 /* ══════════════════════════════════════════════════
    OPERACIONAL Excel Export — fiel ao modelo original
 ══════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════
+   ESTILOS SALVARO para Excel (xlsx-js-style)
+   Paleta: azul #1A6DC8, escuro #1A2B3C, cinza #F4F7FA
+══════════════════════════════════════════════════ */
+const XS = {
+  title:   {font:{name:"Calibri",sz:14,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A6DC8"}},alignment:{horizontal:"left",vertical:"center"},border:{bottom:{style:"medium",color:{rgb:"1A6DC8"}}}},
+  subtitle:{font:{name:"Calibri",sz:10,bold:true,color:{rgb:"1A6DC8"}},alignment:{horizontal:"left",vertical:"center"}},
+  mesLabel:{font:{name:"Calibri",sz:11,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A2B3C"}},alignment:{horizontal:"left",vertical:"center"},border:{bottom:{style:"thin",color:{rgb:"1A2B3C"}}}},
+  header:  {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A6DC8"}},alignment:{horizontal:"center",vertical:"center",wrapText:true},border:{bottom:{style:"thin",color:{rgb:"135BA8"}},right:{style:"hair",color:{rgb:"4A90D9"}}}},
+  row0:    {font:{name:"Calibri",sz:9,color:{rgb:"1A2B3C"}},alignment:{vertical:"center"},border:{bottom:{style:"hair",color:{rgb:"D9E2EC"}}}},
+  row1:    {font:{name:"Calibri",sz:9,color:{rgb:"1A2B3C"}},fill:{fgColor:{rgb:"F4F7FA"}},alignment:{vertical:"center"},border:{bottom:{style:"hair",color:{rgb:"D9E2EC"}}}},
+  total:   {font:{name:"Calibri",sz:10,bold:true,color:{rgb:"1A6DC8"}},fill:{fgColor:{rgb:"E8F1FB"}},alignment:{horizontal:"right",vertical:"center"},border:{top:{style:"thin",color:{rgb:"1A6DC8"}},bottom:{style:"double",color:{rgb:"1A6DC8"}}}},
+  totalLbl:{font:{name:"Calibri",sz:10,bold:true,color:{rgb:"1A2B3C"}},fill:{fgColor:{rgb:"E8F1FB"}},alignment:{horizontal:"right",vertical:"center"},border:{top:{style:"thin",color:{rgb:"1A6DC8"}},bottom:{style:"double",color:{rgb:"1A6DC8"}}}},
+  date:    {font:{name:"Calibri",sz:8,color:{rgb:"6B7280"}},alignment:{horizontal:"right"}},
+};
+
+function applyStyle(ws, ref, style) {
+  if(!ws[ref]) ws[ref] = {t:"s",v:""};
+  ws[ref].s = style;
+}
+
+function applyRowStyles(ws, rowIdx, colCount, style) {
+  for(let c=0;c<colCount;c++){
+    const ref = XLSX.utils.encode_cell({r:rowIdx,c});
+    applyStyle(ws, ref, style);
+  }
+}
+
 function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
   const today = new Date().toLocaleDateString("pt-BR");
-
-  /* Build sheet as array-of-arrays */
   const aoa = [];
+  const COLS = 14;
 
-  /* Row 1: main title */
-  aoa.push(["CONTROLE OPERACIONAL DE EMBARQUES","","","","","","","","","","","ATUALIZADO EM",today,"","",""]);
+  /* Row 0: title */
+  aoa.push(["CONTROLE OPERACIONAL DE EMBARQUES","","","","","","","","","","","","ATUALIZADO EM",today]);
+  /* Row 1: month selectors */
+  aoa.push(["","","ANTERIOR:",ant,"","VIGENTE:",vig,"","","SEGUINTE:",seg,"","",""]);
+  aoa.push([]); /* Row 2: spacer */
 
-  /* Row 2: month selectors */
-  aoa.push(["","","ANTERIOR:",ant,"","VIGENTE:",vig,"","","SEGUINTE:",seg,"","","","",""]);
+  const sectionStarts = [];
 
-  aoa.push([]); /* Row 3: spacer */
-
-  /* Helper: push one section (month label + header + data + totals) */
   function pushSection(mesLabel, rows) {
+    const startRow = aoa.length;
+    sectionStarts.push({start:startRow, dataStart:startRow+2, dataEnd:startRow+2+rows.length-1, totalRow:startRow+2+rows.length});
     /* Month label row */
-    aoa.push([mesLabel,"","","","","","","","","","","","","",""]);
+    aoa.push([mesLabel,"","","","","","","","","","","","",""]);
     /* Header row */
-    aoa.push(["Nº","INV","CLIENTE","PO#","NF","DESTINO","ETA PEDIDO","AGENTE","BOOKING","CONTAINER","NAVIO","DL CARGA","ESTUFAGEM","TRANSP."]);
-    /* Data rows — alternating fill */
+    aoa.push(["Nº","INV","CLIENTE","PO#","NF","DESTINO","ETA","AGENTE","BOOKING","CONTAINER","NAVIO","DL CARGA","ESTUFAGEM","TRANSP."]);
     rows.forEach((r,i) => {
       aoa.push([
-        r.nr||i+1,
-        r.invoice||"",
-        r.cliente||"",
-        xlInt(r.po),
-        xlInt(r.nf),
-        r.destino||"",
-        xlDate(r.eta_pedido),
-        r.agente||"",
-        xlInt(r.booking),
-        r.container||"",
-        r.navio||"",
-        xlDate(r.dl_carga),
-        xlDate(r.estufagem),
-        r.transportadora||"",
+        r.nr||i+1, r.invoice||"", r.cliente||"", xlInt(r.po), xlInt(r.nf), r.destino||"",
+        xlDate(r.eta_pedido), r.agente||"", xlInt(r.booking), r.container||"", r.navio||"",
+        xlDate(r.dl_carga), xlDate(r.estufagem), r.transportadora||""
       ]);
     });
-    /* Totals row */
     const totalUSD = rows.reduce((s,r)=>s+(r.valor_usd||0),0);
-    aoa.push(["","","","","TOTAL USD:",totalUSD.toFixed(2),"","","","","","","","",""]);
-    aoa.push(["","","","","Nº CONTAINERS:",rows.length,"","","","","","","","",""]);
+    aoa.push(["","","","","TOTAL USD:","$"+totalUSD.toFixed(2),"","","Nº CONTAINERS:",rows.length,"","","",""]);
     aoa.push([]); /* spacer */
   }
 
@@ -186,16 +200,48 @@ function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  /* Column widths matching original */
+  /* ── Apply styles ── */
+  /* Title row */
+  for(let c=0;c<COLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:0,c}), XS.title);
+  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:12}), {...XS.date, fill:XS.title.fill});
+  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:13}), {...XS.date, fill:XS.title.fill, font:{...XS.date.font,color:{rgb:"FFFFFF"}}});
+
+  /* Subtitle row */
+  for(let c=0;c<COLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:1,c}), XS.subtitle);
+
+  /* Each section */
+  sectionStarts.forEach(sec => {
+    /* Month label */
+    applyRowStyles(ws, sec.start, COLS, XS.mesLabel);
+    /* Header */
+    applyRowStyles(ws, sec.start+1, COLS, XS.header);
+    /* Data rows (zebra) */
+    for(let r=sec.dataStart;r<=sec.dataEnd;r++){
+      applyRowStyles(ws, r, COLS, r%2===0?XS.row0:XS.row1);
+    }
+    /* Total row */
+    for(let c=0;c<COLS;c++){
+      const ref = XLSX.utils.encode_cell({r:sec.totalRow,c});
+      applyStyle(ws, ref, c<=4||c>=6?XS.totalLbl:XS.total);
+    }
+  });
+
+  /* Merge title */
+  ws["!merges"] = [{s:{r:0,c:0},e:{r:0,c:11}}];
+
+  /* Column widths */
   ws["!cols"] = [
-    {wch:5},{wch:8},{wch:14},{wch:14},{wch:8},{wch:14},
-    {wch:13},{wch:22},{wch:15},{wch:14},{wch:22},{wch:12},{wch:13},{wch:10}
+    {wch:4},{wch:7},{wch:14},{wch:12},{wch:7},{wch:13},
+    {wch:10},{wch:20},{wch:13},{wch:15},{wch:18},{wch:11},{wch:11},{wch:10}
   ];
+
+  /* Row heights */
+  ws["!rows"] = [{hpx:28},{hpx:20}];
 
   /* Page setup: landscape, A4, fit to 1 page wide */
   ws["!pageSetup"] = {orientation:"landscape",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
   ws["!printOptions"] = {gridLines:false};
-  ws["!margins"] = {left:0.5,right:0.5,top:0.75,bottom:0.75,header:0.3,footer:0.3};
+  ws["!margins"] = {left:0.4,right:0.4,top:0.6,bottom:0.5,header:0.3,footer:0.3};
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "OPERACIONAL");
@@ -208,25 +254,22 @@ function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
 ══════════════════════════════════════════════════ */
 function exportCarteiraXLS(m1, rows1, m2, rows2, m3, rows3) {
   const today = new Date().toLocaleDateString("pt-BR");
-
-  /* Carteira original: 2 meses side-by-side cols B-G | J-O, 3rd month below */
   const aoa = [];
+  const TCOLS = 16;
 
-  /* Row 1: title */
+  /* Row 0: title */
   aoa.push(["","PROGRAMAÇÃO DE EMBARQUES / ETAs SOLICITADOS","","","","","","","","","","","","","ATUALIZADO EM",today]);
-  /* Row 2: month labels */
+  /* Row 1: month labels */
   aoa.push(["","MÊS 1:",m1,"","","MÊS 2:",m2,"","","","MÊS 3:",m3,"","","",""]);
   aoa.push([]); /* spacer */
 
-  /* Headers for side-by-side section */
-  const HDR = ["INV","CLIENTE","PO#","USD","DESTINO","ETA SOLICITADO"];
+  const HDR = ["INV","CLIENTE","PO#","USD","DESTINO","ETA"];
   const maxRows12 = Math.max(rows1.length, rows2.length);
 
   /* Month 1 + 2 header row */
   aoa.push(["",m1,"","","","","","","",m2,"","","","","",""]);
   aoa.push(["", ...HDR, "","", ...HDR, ""]);
 
-  /* Data rows side-by-side */
   for(let i=0;i<maxRows12;i++){
     const r1=rows1[i], r2=rows2[i];
     aoa.push([
@@ -238,34 +281,80 @@ function exportCarteiraXLS(m1, rows1, m2, rows2, m3, rows3) {
     ]);
   }
 
-  /* Totals for m1 and m2 */
   const t1=rows1.reduce((s,r)=>s+(r.valor_usd||0),0);
   const t2=rows2.reduce((s,r)=>s+(r.valor_usd||0),0);
-  aoa.push(["","","","",t1.toFixed(2),"","","","","","","",t2.toFixed(2),"","",""]);
-  aoa.push(["","","Nº containers",rows1.length,"","","","","","","Nº containers",rows2.length,"","","",""]);
-  aoa.push([]); /* spacer */
+  const totRow12 = aoa.length;
+  aoa.push(["","","TOTAL:","","$"+t1.toFixed(2),"","","","","","TOTAL:","","$"+t2.toFixed(2),"","",""]);
+  const cntRow12 = aoa.length;
+  aoa.push(["","","Nº containers:",rows1.length,"","","","","","","Nº containers:",rows2.length,"","","",""]);
+  aoa.push([]);
 
-  /* Month 3 below */
+  const m3Start = aoa.length;
   aoa.push(["",m3,"","","","",""]);
   aoa.push(["", ...HDR]);
-  rows3.forEach((r,i)=>{
+  rows3.forEach(r=>{
     aoa.push(["",r.invoice||"",r.cliente||"",xlInt(r.po),xlUSD(r.valor_usd),r.destino||"",xlDate(r.eta_pedido)]);
   });
   const t3=rows3.reduce((s,r)=>s+(r.valor_usd||0),0);
-  aoa.push(["","","",t3.toFixed(2),"","",""]);
-  aoa.push(["","","Nº containers",rows3.length,"","",""]);
+  const totRow3 = aoa.length;
+  aoa.push(["","","TOTAL:","","$"+t3.toFixed(2),"",""]);
+  const cntRow3 = aoa.length;
+  aoa.push(["","","Nº containers:",rows3.length,"","",""]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  /* Column widths */
-  ws["!cols"] = [
-    {wch:3},{wch:9},{wch:14},{wch:14},{wch:12},{wch:14},{wch:14},
-    {wch:2},{wch:2},
-    {wch:9},{wch:14},{wch:14},{wch:12},{wch:14},{wch:14},{wch:3}
+  /* ── Styles ── */
+  for(let c=0;c<TCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:0,c}), XS.title);
+  for(let c=0;c<TCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:1,c}), XS.subtitle);
+
+  /* m1+m2 label */
+  for(let c=0;c<TCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:3,c}), XS.mesLabel);
+  /* m1+m2 header */
+  for(let c=0;c<TCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:4,c}), c===7||c===8?XS.row0:XS.header);
+
+  /* Data zebra m1+m2 */
+  for(let r=5;r<5+maxRows12;r++){
+    for(let c=0;c<TCOLS;c++){
+      applyStyle(ws, XLSX.utils.encode_cell({r,c}), (c===7||c===8)?{}:(r%2===0?XS.row0:XS.row1));
+    }
+  }
+
+  /* Totals m1+m2 */
+  for(let c=0;c<TCOLS;c++){
+    applyStyle(ws, XLSX.utils.encode_cell({r:totRow12,c}), (c===7||c===8)?{}:XS.total);
+    applyStyle(ws, XLSX.utils.encode_cell({r:cntRow12,c}), (c===7||c===8)?{}:XS.totalLbl);
+  }
+
+  /* m3 section */
+  for(let c=0;c<7;c++) applyStyle(ws, XLSX.utils.encode_cell({r:m3Start,c}), XS.mesLabel);
+  for(let c=0;c<7;c++) applyStyle(ws, XLSX.utils.encode_cell({r:m3Start+1,c}), XS.header);
+  for(let r=m3Start+2;r<m3Start+2+rows3.length;r++){
+    for(let c=0;c<7;c++) applyStyle(ws, XLSX.utils.encode_cell({r,c}), r%2===0?XS.row0:XS.row1);
+  }
+  for(let c=0;c<7;c++){
+    applyStyle(ws, XLSX.utils.encode_cell({r:totRow3,c}), XS.total);
+    applyStyle(ws, XLSX.utils.encode_cell({r:cntRow3,c}), XS.totalLbl);
+  }
+
+  /* Merges */
+  ws["!merges"] = [
+    {s:{r:0,c:1},e:{r:0,c:13}},
+    {s:{r:3,c:1},e:{r:3,c:6}},
+    {s:{r:3,c:9},e:{r:3,c:14}},
+    {s:{r:m3Start,c:1},e:{r:m3Start,c:6}},
   ];
 
+  ws["!cols"] = [
+    {wch:2},{wch:8},{wch:14},{wch:12},{wch:13},{wch:14},{wch:12},
+    {wch:1},{wch:1},
+    {wch:8},{wch:14},{wch:12},{wch:13},{wch:14},{wch:12},{wch:2}
+  ];
+
+  ws["!rows"] = [{hpx:28},{hpx:18}];
+
   ws["!pageSetup"] = {orientation:"landscape",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
-  ws["!margins"] = {left:0.5,right:0.5,top:0.75,bottom:0.75,header:0.3,footer:0.3};
+  ws["!printOptions"] = {gridLines:false};
+  ws["!margins"] = {left:0.4,right:0.4,top:0.6,bottom:0.5,header:0.3,footer:0.3};
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "CARTEIRA");
@@ -1371,37 +1460,70 @@ function PgRel({recs, tab, setTab, yr, setYr, mes, setMes}) {
   function csv(data,name){if(!data.length)return;const k=Object.keys(data[0]);const c=[k.join(","),...data.map(r=>k.map(x=>JSON.stringify(r[x]??"")||"").join(","))].join("\n");const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(c);a.download=name;a.click();}
 
   function relXLS(rows, mes) {
+    const RCOLS = 11;
     const aoa = [
       ["RELATÓRIO MENSAL — "+mes,"","","","","","","","","",""],
       ["","","","","","","","","","",""],
       ["INVOICE","CLIENTE","PO#","NF","DESTINO","VALOR USD","FRETE USD","CONTAINER","ETA","STATUS DOC","STATUS"],
     ];
     rows.forEach((r,i)=>{
-      aoa.push([r.invoice||"",r.cliente||"",r.po||"",r.nf||"",r.destino||"",
+      aoa.push([r.invoice||"",r.cliente||"",xlInt(r.po),xlInt(r.nf),r.destino||"",
         xlUSD(r.valor_usd),xlUSD(r.frete_usd),r.container||"",xlDate(r.eta_pedido),r.status_doc||"",r.status||""]);
     });
     const totalUSD = rows.reduce((s,r)=>s+(r.valor_usd||0),0);
-    aoa.push(["","","","","TOTAL USD",totalUSD,"","","","",""]);
+    const totRow = aoa.length;
+    aoa.push(["","","","","TOTAL USD","$"+totalUSD.toFixed(2),"","","","",""]);
+    const cntRow = aoa.length;
     aoa.push(["","","","","Nº CONTAINERS",rows.length,"","","","",""]);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"]=[{wch:10},{wch:14},{wch:14},{wch:10},{wch:14},{wch:13},{wch:13},{wch:15},{wch:12},{wch:14},{wch:16}];
+
+    /* Styles */
+    for(let c=0;c<RCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:0,c}), XS.title);
+    for(let c=0;c<RCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:2,c}), XS.header);
+    for(let r=3;r<3+rows.length;r++){
+      for(let c=0;c<RCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r,c}), r%2===1?XS.row0:XS.row1);
+    }
+    for(let c=0;c<RCOLS;c++){
+      applyStyle(ws, XLSX.utils.encode_cell({r:totRow,c}), XS.total);
+      applyStyle(ws, XLSX.utils.encode_cell({r:cntRow,c}), XS.totalLbl);
+    }
+    ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:RCOLS-1}}];
+
+    ws["!cols"]=[{wch:10},{wch:14},{wch:12},{wch:10},{wch:14},{wch:13},{wch:13},{wch:15},{wch:12},{wch:14},{wch:16}];
+    ws["!rows"]=[{hpx:28}];
     ws["!pageSetup"]={orientation:"landscape",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
-    ws["!margins"]={left:0.5,right:0.5,top:0.75,bottom:0.75};
+    ws["!printOptions"]={gridLines:false};
+    ws["!margins"]={left:0.4,right:0.4,top:0.6,bottom:0.5};
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,mes.slice(0,8));
     XLSX.writeFile(wb,`Mensal_${mes.replace(" ","_")}.xlsx`);
   }
 
   function annualXLS(list, yr) {
+    const ACOLS = 6;
     const aoa=[["RELATÓRIO ANUAL — "+yr,"","","","",""],["","","","","",""],
       ["MÊS","CONTAINERS","FATURAMENTO USD","FRETE USD","MÉDIA/CNTR","% FRETE/FAT"]];
     list.forEach(r=>{
       aoa.push([r.m,r.cnt,r.fat,r.fret,r.cnt?r.fat/r.cnt:0,r.fat?(r.fret/r.fat):0]);
     });
     const tot=list.reduce((a,r)=>({fat:a.fat+r.fat,cnt:a.cnt+r.cnt,fret:a.fret+r.fret}),{fat:0,cnt:0,fret:0});
+    const totRow = aoa.length;
     aoa.push(["TOTAL",tot.cnt,tot.fat,tot.fret,tot.cnt?tot.fat/tot.cnt:0,tot.fat?tot.fret/tot.fat:0]);
     const ws=XLSX.utils.aoa_to_sheet(aoa);
+
+    /* Styles */
+    for(let c=0;c<ACOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:0,c}), XS.title);
+    for(let c=0;c<ACOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:2,c}), XS.header);
+    for(let r=3;r<3+list.length;r++){
+      for(let c=0;c<ACOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r,c}), r%2===1?XS.row0:XS.row1);
+    }
+    for(let c=0;c<ACOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:totRow,c}), XS.total);
+    ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:ACOLS-1}}];
+
     ws["!cols"]=[{wch:14},{wch:12},{wch:16},{wch:14},{wch:14},{wch:14}];
+    ws["!rows"]=[{hpx:28}];
     ws["!pageSetup"]={orientation:"portrait",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
+    ws["!printOptions"]={gridLines:false};
+    ws["!margins"]={left:0.6,right:0.6,top:0.6,bottom:0.5};
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,yr);
     XLSX.writeFile(wb,`Anual_${yr}.xlsx`);
   }
