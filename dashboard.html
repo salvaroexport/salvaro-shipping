@@ -1096,7 +1096,7 @@ function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
             <table className="cart-table">
               <thead><tr>
                 <th>Invoice</th><th>Cliente</th><th>PO#</th><th>Destino</th>
-                <th style={{textAlign:"right"}}>Valor USD</th><th>ETA</th><th>NF</th>
+                <th style={{textAlign:"right"}}>Valor USD</th><th>ETA</th>
               </tr></thead>
               <tbody>{rows.map(r=>(
                 <tr key={r.invoice}>
@@ -1106,7 +1106,6 @@ function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
                   <td>{r.destino||"—"}</td>
                   <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:500}}>{fmtUSD(r.valor_usd)}</td>
                   <td style={{color:"var(--text2)"}}>{fmtDate(r.eta_pedido)}</td>
-                  <td style={{color:"var(--text2)"}}>{fmtInt(r.nf)}</td>
                 </tr>
               ))}</tbody>
             </table>
