@@ -143,8 +143,8 @@ const XS = {
   subtitle:{font:{name:"Calibri",sz:10,bold:true,color:{rgb:"1A6DC8"}},alignment:{horizontal:"left",vertical:"center"}},
   mesLabel:{font:{name:"Calibri",sz:11,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A2B3C"}},alignment:{horizontal:"left",vertical:"center"},border:{bottom:{style:"thin",color:{rgb:"1A2B3C"}}}},
   header:  {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A6DC8"}},alignment:{horizontal:"center",vertical:"center",wrapText:true},border:{bottom:{style:"thin",color:{rgb:"135BA8"}},right:{style:"hair",color:{rgb:"4A90D9"}}}},
-  row0:    {font:{name:"Calibri",sz:9,color:{rgb:"1A2B3C"}},alignment:{vertical:"center"},border:{bottom:{style:"hair",color:{rgb:"D9E2EC"}}}},
-  row1:    {font:{name:"Calibri",sz:9,color:{rgb:"1A2B3C"}},fill:{fgColor:{rgb:"F4F7FA"}},alignment:{vertical:"center"},border:{bottom:{style:"hair",color:{rgb:"D9E2EC"}}}},
+  row0:    {font:{name:"Calibri",sz:9,color:{rgb:"1A2B3C"}},alignment:{horizontal:"center",vertical:"center"},border:{bottom:{style:"hair",color:{rgb:"D9E2EC"}}}},
+  row1:    {font:{name:"Calibri",sz:9,color:{rgb:"1A2B3C"}},fill:{fgColor:{rgb:"F4F7FA"}},alignment:{horizontal:"center",vertical:"center"},border:{bottom:{style:"hair",color:{rgb:"D9E2EC"}}}},
   total:   {font:{name:"Calibri",sz:10,bold:true,color:{rgb:"1A6DC8"}},fill:{fgColor:{rgb:"E8F1FB"}},alignment:{horizontal:"right",vertical:"center"},border:{top:{style:"thin",color:{rgb:"1A6DC8"}},bottom:{style:"double",color:{rgb:"1A6DC8"}}}},
   totalLbl:{font:{name:"Calibri",sz:10,bold:true,color:{rgb:"1A2B3C"}},fill:{fgColor:{rgb:"E8F1FB"}},alignment:{horizontal:"right",vertical:"center"},border:{top:{style:"thin",color:{rgb:"1A6DC8"}},bottom:{style:"double",color:{rgb:"1A6DC8"}}}},
   date:    {font:{name:"Calibri",sz:8,color:{rgb:"6B7280"}},alignment:{horizontal:"right"}},
@@ -167,20 +167,18 @@ function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
   const aoa = [];
   const COLS = 14;
 
-  /* Row 0: title */
+  /* Row 0: title bar */
   aoa.push(["CONTROLE OPERACIONAL DE EMBARQUES","","","","","","","","","","","","ATUALIZADO EM",today]);
-  /* Row 1: month selectors */
-  aoa.push(["","","ANTERIOR:",ant,"","VIGENTE:",vig,"","","SEGUINTE:",seg,"","",""]);
-  aoa.push([]); /* Row 2: spacer */
 
   const sectionStarts = [];
+  const merges = [{s:{r:0,c:0},e:{r:0,c:11}}];
 
   function pushSection(mesLabel, rows) {
+    aoa.push([]); /* spacer */
     const startRow = aoa.length;
     sectionStarts.push({start:startRow, dataStart:startRow+2, dataEnd:startRow+2+rows.length-1, totalRow:startRow+2+rows.length});
-    /* Month label row */
     aoa.push([mesLabel,"","","","","","","","","","","","",""]);
-    /* Header row */
+    merges.push({s:{r:startRow,c:0},e:{r:startRow,c:COLS-1}});
     aoa.push(["Nº","INV","CLIENTE","PO#","NF","DESTINO","ETA","AGENTE","BOOKING","CONTAINER","NAVIO","DL CARGA","ESTUFAGEM","TRANSP."]);
     rows.forEach((r,i) => {
       aoa.push([
@@ -190,8 +188,7 @@ function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
       ]);
     });
     const totalUSD = rows.reduce((s,r)=>s+(r.valor_usd||0),0);
-    aoa.push(["","","","","TOTAL USD:","$"+totalUSD.toFixed(2),"","","Nº CONTAINERS:",rows.length,"","","",""]);
-    aoa.push([]); /* spacer */
+    aoa.push(["","","","TOTAL USD:","","$"+totalUSD.toFixed(2),"","","Nº CONTAINERS:",rows.length,"","","",""]);
   }
 
   pushSection(ant, antRows);
@@ -200,45 +197,30 @@ function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  /* ── Apply styles ── */
   /* Title row */
   for(let c=0;c<COLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:0,c}), XS.title);
-  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:12}), {...XS.date, fill:XS.title.fill});
-  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:13}), {...XS.date, fill:XS.title.fill, font:{...XS.date.font,color:{rgb:"FFFFFF"}}});
-
-  /* Subtitle row */
-  for(let c=0;c<COLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:1,c}), XS.subtitle);
+  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:12}), {font:{name:"Calibri",sz:8,color:{rgb:"6B7280"}},fill:{fgColor:{rgb:"1A6DC8"}},alignment:{horizontal:"right"},border:XS.title.border});
+  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:13}), {font:{name:"Calibri",sz:8,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A6DC8"}},alignment:{horizontal:"right"},border:XS.title.border});
 
   /* Each section */
   sectionStarts.forEach(sec => {
-    /* Month label */
-    applyRowStyles(ws, sec.start, COLS, XS.mesLabel);
-    /* Header */
+    for(let c=0;c<COLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:sec.start,c}), {...XS.mesLabel, alignment:{horizontal:"center",vertical:"center"}});
     applyRowStyles(ws, sec.start+1, COLS, XS.header);
-    /* Data rows (zebra) */
     for(let r=sec.dataStart;r<=sec.dataEnd;r++){
-      applyRowStyles(ws, r, COLS, r%2===0?XS.row0:XS.row1);
+      applyRowStyles(ws, r, COLS, (r-sec.dataStart)%2===0?XS.row1:XS.row0);
     }
-    /* Total row */
     for(let c=0;c<COLS;c++){
       const ref = XLSX.utils.encode_cell({r:sec.totalRow,c});
-      applyStyle(ws, ref, c<=4||c>=6?XS.totalLbl:XS.total);
+      applyStyle(ws, ref, (c===5)?XS.total:XS.totalLbl);
     }
   });
 
-  /* Merge title */
-  ws["!merges"] = [{s:{r:0,c:0},e:{r:0,c:11}}];
-
-  /* Column widths */
+  ws["!merges"] = merges;
   ws["!cols"] = [
-    {wch:4},{wch:7},{wch:14},{wch:12},{wch:7},{wch:13},
-    {wch:10},{wch:20},{wch:13},{wch:15},{wch:18},{wch:11},{wch:11},{wch:10}
+    {wch:4.9},{wch:7.9},{wch:14.9},{wch:12.9},{wch:7.9},{wch:13.9},
+    {wch:10.9},{wch:20.9},{wch:13.9},{wch:15.9},{wch:18.9},{wch:11.9},{wch:11},{wch:10.9}
   ];
-
-  /* Row heights */
-  ws["!rows"] = [{hpx:28},{hpx:20}];
-
-  /* Page setup: landscape, A4, fit to 1 page wide */
+  ws["!rows"] = [{hpx:28}];
   ws["!pageSetup"] = {orientation:"landscape",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
   ws["!printOptions"] = {gridLines:false};
   ws["!margins"] = {left:0.4,right:0.4,top:0.6,bottom:0.5,header:0.3,footer:0.3};
@@ -248,6 +230,7 @@ function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
   XLSX.writeFile(wb, `Operacional_${vig.replace(" ","_")}.xlsx`);
 }
 
+
 /* ══════════════════════════════════════════════════
    CARTEIRA Excel Export — fiel ao modelo original
    Layout: Mês1 (cols B-G) | Mês2 (cols J-O) | Mês3 abaixo
@@ -255,20 +238,20 @@ function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
 function exportCarteiraXLS(m1, rows1, m2, rows2, m3, rows3) {
   const today = new Date().toLocaleDateString("pt-BR");
   const aoa = [];
-  const TCOLS = 16;
+  const TCOLS = 15; /* A-O */
 
-  /* Row 0: title */
-  aoa.push(["","PROGRAMAÇÃO DE EMBARQUES / ETAs SOLICITADOS","","","","","","","","","","","","","ATUALIZADO EM",today]);
-  /* Row 1: month labels */
-  aoa.push(["","MÊS 1:",m1,"","","MÊS 2:",m2,"","","","MÊS 3:",m3,"","","",""]);
+  /* Row 0: title (merge B1:M1) */
+  aoa.push(["","PROGRAMAÇÃO DE EMBARQUES / ETAs SOLICITADOS","","","","","","","","","","","","ATUALIZADO EM",today]);
   aoa.push([]); /* spacer */
 
-  const HDR = ["INV","CLIENTE","PO#","USD","DESTINO","ETA"];
-  const maxRows12 = Math.max(rows1.length, rows2.length);
+  /* Row 2: month labels (merged B3:G3 and J3:O3) */
+  aoa.push(["",m1,"","","","","","","",m2,"","","","",""]);
 
-  /* Month 1 + 2 header row */
-  aoa.push(["",m1,"","","","","","","",m2,"","","","","",""]);
-  aoa.push(["", ...HDR, "","", ...HDR, ""]);
+  /* Row 3: headers */
+  const HDR = ["INV","CLIENTE","PO#","USD","DESTINO","ETA"];
+  aoa.push(["", ...HDR, "","", ...HDR]);
+
+  const maxRows12 = Math.max(rows1.length, rows2.length);
 
   for(let i=0;i<maxRows12;i++){
     const r1=rows1[i], r2=rows2[i];
@@ -276,21 +259,20 @@ function exportCarteiraXLS(m1, rows1, m2, rows2, m3, rows3) {
       "",
       r1?r1.invoice:"", r1?r1.cliente:"", r1?xlInt(r1.po):"", r1?xlUSD(r1.valor_usd):"", r1?r1.destino:"", r1?xlDate(r1.eta_pedido):"",
       "","",
-      r2?r2.invoice:"", r2?r2.cliente:"", r2?xlInt(r2.po):"", r2?xlUSD(r2.valor_usd):"", r2?r2.destino:"", r2?xlDate(r2.eta_pedido):"",
-      ""
+      r2?r2.invoice:"", r2?r2.cliente:"", r2?xlInt(r2.po):"", r2?xlUSD(r2.valor_usd):"", r2?r2.destino:"", r2?xlDate(r2.eta_pedido):""
     ]);
   }
 
   const t1=rows1.reduce((s,r)=>s+(r.valor_usd||0),0);
   const t2=rows2.reduce((s,r)=>s+(r.valor_usd||0),0);
   const totRow12 = aoa.length;
-  aoa.push(["","","TOTAL:","","$"+t1.toFixed(2),"","","","","","TOTAL:","","$"+t2.toFixed(2),"","",""]);
+  aoa.push(["","","TOTAL:","","$"+t1.toFixed(2),"","","","","","TOTAL:","","$"+t2.toFixed(2),"",""]);
   const cntRow12 = aoa.length;
-  aoa.push(["","","Nº containers:",rows1.length,"","","","","","","Nº containers:",rows2.length,"","","",""]);
+  aoa.push(["","","Nº containers:",rows1.length,"","","","","","","Nº containers:",rows2.length,"","",""]);
   aoa.push([]);
 
   const m3Start = aoa.length;
-  aoa.push(["",m3,"","","","",""]);
+  aoa.push(["",m3,"","","","",""]); /* merge B:G */
   aoa.push(["", ...HDR]);
   rows3.forEach(r=>{
     aoa.push(["",r.invoice||"",r.cliente||"",xlInt(r.po),xlUSD(r.valor_usd),r.destino||"",xlDate(r.eta_pedido)]);
@@ -304,53 +286,64 @@ function exportCarteiraXLS(m1, rows1, m2, rows2, m3, rows3) {
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
   /* ── Styles ── */
+  /* Title row - bg across all, with ATUALIZADO in col N/O */
   for(let c=0;c<TCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:0,c}), XS.title);
-  for(let c=0;c<TCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:1,c}), XS.subtitle);
+  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:13}), {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A6DC8"}},alignment:{horizontal:"left"},border:XS.title.border});
+  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:14}), XS.title);
 
-  /* m1+m2 label */
-  for(let c=0;c<TCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:3,c}), XS.mesLabel);
-  /* m1+m2 header */
-  for(let c=0;c<TCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:4,c}), c===7||c===8?XS.row0:XS.header);
+  /* Row 2: month labels - full row dark bg, center on merges */
+  for(let c=0;c<TCOLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:2,c}), {...XS.mesLabel, alignment:{horizontal:(c>=1&&c<=6)||(c>=9&&c<=14)?"center":"left",vertical:"center"}});
+
+  /* Row 3: headers */
+  for(let c=0;c<TCOLS;c++){
+    const isGap = c===7||c===8;
+    applyStyle(ws, XLSX.utils.encode_cell({r:3,c}), isGap?XS.row0:XS.header);
+  }
 
   /* Data zebra m1+m2 */
-  for(let r=5;r<5+maxRows12;r++){
+  for(let r=4;r<4+maxRows12;r++){
     for(let c=0;c<TCOLS;c++){
-      applyStyle(ws, XLSX.utils.encode_cell({r,c}), (c===7||c===8)?{}:(r%2===0?XS.row0:XS.row1));
+      const isGap = c===7||c===8;
+      const isZebra = (r-4)%2===0;
+      applyStyle(ws, XLSX.utils.encode_cell({r,c}), isGap?{}:(isZebra?XS.row1:XS.row0));
     }
   }
 
   /* Totals m1+m2 */
   for(let c=0;c<TCOLS;c++){
-    applyStyle(ws, XLSX.utils.encode_cell({r:totRow12,c}), (c===7||c===8)?{}:XS.total);
-    applyStyle(ws, XLSX.utils.encode_cell({r:cntRow12,c}), (c===7||c===8)?{}:XS.totalLbl);
+    const isGap = c===7||c===8;
+    applyStyle(ws, XLSX.utils.encode_cell({r:totRow12,c}), isGap?{}:XS.total);
+    applyStyle(ws, XLSX.utils.encode_cell({r:cntRow12,c}), isGap?{}:XS.totalLbl);
   }
 
   /* m3 section */
-  for(let c=0;c<7;c++) applyStyle(ws, XLSX.utils.encode_cell({r:m3Start,c}), XS.mesLabel);
+  for(let c=0;c<7;c++) applyStyle(ws, XLSX.utils.encode_cell({r:m3Start,c}), {...XS.mesLabel, alignment:{horizontal:"left",vertical:"center"}});
   for(let c=0;c<7;c++) applyStyle(ws, XLSX.utils.encode_cell({r:m3Start+1,c}), XS.header);
   for(let r=m3Start+2;r<m3Start+2+rows3.length;r++){
-    for(let c=0;c<7;c++) applyStyle(ws, XLSX.utils.encode_cell({r,c}), r%2===0?XS.row0:XS.row1);
+    const isZebra = (r-m3Start-2)%2===0;
+    for(let c=0;c<7;c++) applyStyle(ws, XLSX.utils.encode_cell({r,c}), isZebra?XS.row0:XS.row1);
   }
   for(let c=0;c<7;c++){
     applyStyle(ws, XLSX.utils.encode_cell({r:totRow3,c}), XS.total);
     applyStyle(ws, XLSX.utils.encode_cell({r:cntRow3,c}), XS.totalLbl);
   }
 
-  /* Merges */
+  /* Merges matching reference */
   ws["!merges"] = [
-    {s:{r:0,c:1},e:{r:0,c:13}},
-    {s:{r:3,c:1},e:{r:3,c:6}},
-    {s:{r:3,c:9},e:{r:3,c:14}},
-    {s:{r:m3Start,c:1},e:{r:m3Start,c:6}},
+    {s:{r:0,c:1},e:{r:0,c:12}},     /* B1:M1 title */
+    {s:{r:2,c:1},e:{r:2,c:6}},       /* B3:G3 m1 label */
+    {s:{r:2,c:9},e:{r:2,c:14}},      /* J3:O3 m2 label */
+    {s:{r:m3Start,c:1},e:{r:m3Start,c:6}}, /* B:G m3 label */
   ];
 
+  /* Col widths matching reference exactly */
   ws["!cols"] = [
-    {wch:2},{wch:8},{wch:14},{wch:12},{wch:13},{wch:14},{wch:12},
-    {wch:1},{wch:1},
-    {wch:8},{wch:14},{wch:12},{wch:13},{wch:14},{wch:12},{wch:2}
+    {wch:2.9},{wch:8.9},{wch:14.9},{wch:12.9},{wch:13.9},{wch:14.9},{wch:12.9},
+    {wch:1.9},{wch:1},
+    {wch:8.9},{wch:14.9},{wch:12.9},{wch:13.9},{wch:14.9},{wch:12.9}
   ];
 
-  ws["!rows"] = [{hpx:28},{hpx:18}];
+  ws["!rows"] = [{hpx:28}];
 
   ws["!pageSetup"] = {orientation:"landscape",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
   ws["!printOptions"] = {gridLines:false};
@@ -360,6 +353,7 @@ function exportCarteiraXLS(m1, rows1, m2, rows2, m3, rows3) {
   XLSX.utils.book_append_sheet(wb, ws, "CARTEIRA");
   XLSX.writeFile(wb, `Carteira_${m1.replace(" ","_")}.xlsx`);
 }
+
 
 const CSS = `
 .app{display:flex;height:100vh;overflow:hidden}
