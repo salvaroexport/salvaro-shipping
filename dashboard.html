@@ -117,6 +117,7 @@ HIST_RECS.forEach((r,i) => { HIST_RECS[i] = normalize(r); });
 
 const fmtUSD = v => (!v && v!==0) ? "—" : new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2}).format(v);
 const fmtDate = d => { if(!d) return "—"; const dt=new Date(d+"T00:00:00"); return isNaN(dt)?"—":dt.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"}); };
+const fmtInt = v => { if(v===null||v===undefined||v==="") return "—"; const s=String(v); return s.endsWith(".0")?s.slice(0,-2):s; };
 
 /* ── Excel helpers ── */
 function xlDate(d) {
@@ -125,6 +126,7 @@ function xlDate(d) {
   return isNaN(dt) ? "" : dt.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric"});
 }
 function xlUSD(v) { return v ? Number(v) : ""; }
+function xlInt(v) { if(v===null||v===undefined||v==="") return ""; const s=String(v); return s.endsWith(".0")?s.slice(0,-2):s; }
 
 /* Styles constants for xlsx-js-style (we use XLSX which supports !cols/!rows but not cell styles in community build)
    We use a workaround: build rich HTML then convert, OR build formatted aoa with merged cells via XLSX.utils */
@@ -158,12 +160,12 @@ function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
         r.nr||i+1,
         r.invoice||"",
         r.cliente||"",
-        r.po||"",
-        r.nf||"",
+        xlInt(r.po),
+        xlInt(r.nf),
         r.destino||"",
         xlDate(r.eta_pedido),
         r.agente||"",
-        r.booking||"",
+        xlInt(r.booking),
         r.container||"",
         r.navio||"",
         xlDate(r.dl_carga),
@@ -229,9 +231,9 @@ function exportCarteiraXLS(m1, rows1, m2, rows2, m3, rows3) {
     const r1=rows1[i], r2=rows2[i];
     aoa.push([
       "",
-      r1?r1.invoice:"", r1?r1.cliente:"", r1?r1.po:"", r1?xlUSD(r1.valor_usd):"", r1?r1.destino:"", r1?xlDate(r1.eta_pedido):"",
+      r1?r1.invoice:"", r1?r1.cliente:"", r1?xlInt(r1.po):"", r1?xlUSD(r1.valor_usd):"", r1?r1.destino:"", r1?xlDate(r1.eta_pedido):"",
       "","",
-      r2?r2.invoice:"", r2?r2.cliente:"", r2?r2.po:"", r2?xlUSD(r2.valor_usd):"", r2?r2.destino:"", r2?xlDate(r2.eta_pedido):"",
+      r2?r2.invoice:"", r2?r2.cliente:"", r2?xlInt(r2.po):"", r2?xlUSD(r2.valor_usd):"", r2?r2.destino:"", r2?xlDate(r2.eta_pedido):"",
       ""
     ]);
   }
@@ -247,7 +249,7 @@ function exportCarteiraXLS(m1, rows1, m2, rows2, m3, rows3) {
   aoa.push(["",m3,"","","","",""]);
   aoa.push(["", ...HDR]);
   rows3.forEach((r,i)=>{
-    aoa.push(["",r.invoice||"",r.cliente||"",r.po||"",xlUSD(r.valor_usd),r.destino||"",xlDate(r.eta_pedido)]);
+    aoa.push(["",r.invoice||"",r.cliente||"",xlInt(r.po),xlUSD(r.valor_usd),r.destino||"",xlDate(r.eta_pedido)]);
   });
   const t3=rows3.reduce((s,r)=>s+(r.valor_usd||0),0);
   aoa.push(["","","",t3.toFixed(2),"","",""]);
@@ -360,6 +362,11 @@ td.m{color:var(--text2)} td.r{text-align:right;font-variant-numeric:tabular-nums
 .sel:focus{border-color:var(--blue)}
 /* carteira compact table */
 .cart-table{width:100%;border-collapse:collapse;font-size:12px}
+.ops-table{width:100%;border-collapse:collapse;font-size:11.5px;table-layout:fixed}
+.ops-table th,.ops-table td{padding:6px 5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ops-table th{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.4px;text-transform:uppercase;background:#F4F7FA;border-bottom:1px solid var(--border)}
+.ops-table tbody tr{border-bottom:1px solid #EEF2F6}
+.ops-table tbody tr:hover{background:#F4F8FF}
 .cart-table thead tr{background:#F4F7FA;border-bottom:1px solid var(--border)}
 .cart-table th{padding:7px 10px;text-align:left;font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.6px;text-transform:uppercase;white-space:nowrap}
 .cart-table tbody tr{border-bottom:1px solid #EEF2F6}
@@ -1002,7 +1009,7 @@ function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
           {alerts.soon>0&&<span style={{background:"#FFFBEB",color:"#92400E",fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:12,border:"1px solid #FDE68A"}}>⏳ {alerts.soon} próximo{alerts.soon>1?"s":""}</span>}
         </div>
       </div>
-      <div className="tw"><table>
+      <div className="tw"><table className="ops-table">
         <thead><tr><th>Nº</th><th>Invoice</th><th>Cliente</th><th>PO#</th><th>NF</th><th>Destino</th><th>ETA</th><th>Agente</th><th>Booking</th><th>Container</th><th>Navio</th><th>DL Carga</th><th>Estufagem</th><th>Transp.</th></tr></thead>
         <tbody>{rows.length===0
           ?<tr><td colSpan={14} className="empty">Nenhum embarque neste período</td></tr>
@@ -1012,10 +1019,10 @@ function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
             const estLvl=dateAlert(r.estufagem,"container",r);
             return <tr key={r.invoice}>
               <td className="m">{r.nr||i+1}</td><td><strong>{r.invoice}</strong></td>
-              <td>{r.cliente||"—"}</td><td className="m">{r.po||"—"}</td><td>{r.nf||"—"}</td>
+              <td>{r.cliente||"—"}</td><td className="m">{fmtInt(r.po)}</td><td>{fmtInt(r.nf)}</td>
               <td>{r.destino||"—"}</td>
               <td style={alertStyle(etaLvl)}>{fmtDate(r.eta_pedido)}{etaLvl==="overdue"&&" ⚠"}</td>
-              <td>{r.agente?.split(" -")[0]||"—"}</td><td className="m">{r.booking||"—"}</td>
+              <td>{r.agente?.split(" -")[0]||"—"}</td><td className="m">{fmtInt(r.booking)}</td>
               <td>{r.container||"—"}</td><td className="m">{r.navio||"—"}</td>
               <td style={alertStyle(dlLvl)}>{fmtDate(r.dl_carga)}{dlLvl==="overdue"&&" ⚠"}{dlLvl==="soon"&&" ⏳"}</td>
               <td style={alertStyle(estLvl)}>{fmtDate(r.estufagem)}{estLvl==="overdue"&&" ⚠"}{estLvl==="soon"&&" ⏳"}</td>
@@ -1088,18 +1095,18 @@ function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
         : <div className="tw" style={{borderRadius:8}}>
             <table className="cart-table">
               <thead><tr>
-                <th>Invoice</th><th>Cliente</th><th>Destino</th>
-                <th style={{textAlign:"right"}}>Valor USD</th><th>ETA</th><th>NF</th><th>Status Doc</th>
+                <th>Invoice</th><th>Cliente</th><th>PO#</th><th>Destino</th>
+                <th style={{textAlign:"right"}}>Valor USD</th><th>ETA</th><th>NF</th>
               </tr></thead>
               <tbody>{rows.map(r=>(
                 <tr key={r.invoice}>
                   <td><strong style={{color:"var(--blue)"}}>{r.invoice}</strong></td>
                   <td style={{color:"var(--text2)"}}>{r.cliente||"—"}</td>
+                  <td style={{color:"var(--text2)"}}>{fmtInt(r.po)}</td>
                   <td>{r.destino||"—"}</td>
                   <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:500}}>{fmtUSD(r.valor_usd)}</td>
                   <td style={{color:"var(--text2)"}}>{fmtDate(r.eta_pedido)}</td>
-                  <td style={{color:"var(--text2)"}}>{r.nf||"—"}</td>
-                  <td><DocBadge v={r.status_doc}/></td>
+                  <td style={{color:"var(--text2)"}}>{fmtInt(r.nf)}</td>
                 </tr>
               ))}</tbody>
             </table>
