@@ -1010,6 +1010,22 @@ function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
         </div>
       </div>
       <div className="tw"><table className="ops-table">
+        <colgroup>
+          <col style={{width:"3%"}}/>
+          <col style={{width:"5%"}}/>
+          <col style={{width:"11%"}}/>
+          <col style={{width:"7%"}}/>
+          <col style={{width:"4%"}}/>
+          <col style={{width:"9%"}}/>
+          <col style={{width:"5%"}}/>
+          <col style={{width:"10%"}}/>
+          <col style={{width:"8%"}}/>
+          <col style={{width:"11%"}}/>
+          <col style={{width:"8%"}}/>
+          <col style={{width:"6.5%"}}/>
+          <col style={{width:"6.5%"}}/>
+          <col style={{width:"6%"}}/>
+        </colgroup>
         <thead><tr><th>Nº</th><th>Invoice</th><th>Cliente</th><th>PO#</th><th>NF</th><th>Destino</th><th>ETA</th><th>Agente</th><th>Booking</th><th>Container</th><th>Navio</th><th>DL Carga</th><th>Estufagem</th><th>Transp.</th></tr></thead>
         <tbody>{rows.length===0
           ?<tr><td colSpan={14} className="empty">Nenhum embarque neste período</td></tr>
