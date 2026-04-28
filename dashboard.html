@@ -1163,54 +1163,146 @@ function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
 }
 
 /* ══════════════════════════════════════════
-   CARTEIRA — compact table layout
+   CARTEIRA — BI Dashboard para diretoria
 ══════════════════════════════════════════ */
 function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
   const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
+  const [expanded,setExpanded]=useState(null); /* which month is expanded */
 
   function getCartRows(mes){ return recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0)); }
 
-  const MesTable = ({mes, color}) => {
-    const rows = getCartRows(mes);
-    const total = rows.reduce((s,r)=>s+(r.valor_usd||0),0);
-    return <div className="card">
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{width:10,height:10,borderRadius:"50%",background:color,flexShrink:0}}/>
-          <strong style={{fontSize:14,color:"var(--text)"}}>{mes}</strong>
-        </div>
-      </div>
-      <div style={{display:"flex",gap:20,marginBottom:10,paddingBottom:10,borderBottom:"1px solid var(--border)"}}>
-        <div>
-          <div style={{fontSize:10,color:"var(--text3)",fontWeight:600,letterSpacing:.5,textTransform:"uppercase"}}>Pedidos</div>
-          <div style={{fontFamily:"Syne",fontSize:20,fontWeight:700,color:"var(--text)"}}>{rows.length}</div>
-        </div>
-        <div>
-          <div style={{fontSize:10,color:"var(--text3)",fontWeight:600,letterSpacing:.5,textTransform:"uppercase"}}>Faturamento</div>
-          <div style={{fontFamily:"Syne",fontSize:15,fontWeight:700,color:"var(--blue)"}}>{fmtUSD(total)}</div>
-        </div>
-      </div>
-      {rows.length===0
-        ? <div className="empty" style={{padding:"20px 0"}}>Sem pedidos</div>
-        : <div className="tw" style={{borderRadius:8}}>
-            <table className="cart-table">
-              <thead><tr>
-                <th>Invoice</th><th>Cliente</th><th>PO#</th><th>Destino</th>
-                <th style={{textAlign:"right"}}>Valor USD</th><th>ETA</th>
-              </tr></thead>
-              <tbody>{rows.map(r=>(
-                <tr key={r.invoice}>
-                  <td><strong style={{color:"var(--blue)"}}>{r.invoice}</strong></td>
-                  <td style={{color:"var(--text2)"}}>{r.cliente||"—"}</td>
-                  <td style={{color:"var(--text2)"}}>{fmtInt(r.po)}</td>
-                  <td>{r.destino||"—"}</td>
-                  <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:500}}>{fmtUSD(r.valor_usd)}</td>
-                  <td style={{color:"var(--text2)"}}>{fmtDate(r.eta_pedido)}</td>
-                </tr>
-              ))}</tbody>
-            </table>
+  /* Dados agregados dos 3 meses */
+  const months = useMemo(()=>{
+    return [
+      {key:"m1",label:m1,color:"#D97706",rows:getCartRows(m1)},
+      {key:"m2",label:m2,color:"#1A6DC8",rows:getCartRows(m2)},
+      {key:"m3",label:m3,color:"#059669",rows:getCartRows(m3)},
+    ].map(m=>({
+      ...m,
+      cnt:m.rows.length,
+      fat:m.rows.reduce((s,r)=>s+(r.valor_usd||0),0),
+      byCli:(()=>{const c={};m.rows.forEach(r=>{const k=r.cliente||"—";c[k]=(c[k]||0)+(r.valor_usd||0)});return Object.entries(c).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}));})(),
+      byDst:(()=>{const d={};m.rows.forEach(r=>{const k=r.destino||"—";d[k]=(d[k]||0)+1});return Object.entries(d).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}));})(),
+    }));
+  },[recs,m1,m2,m3]);
+
+  const totalFat = months.reduce((s,m)=>s+m.fat,0);
+  const totalCnt = months.reduce((s,m)=>s+m.cnt,0);
+
+  /* ── Mini bar chart SVG (horizontal, 3 barras) ── */
+  const BarCompare = ({data, fmt, label}) => {
+    const max = Math.max(...data.map(d=>d.v),1);
+    return <div>
+      <div style={{fontSize:10,fontWeight:600,color:"var(--text3)",letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>{label}</div>
+      {data.map((d,i)=>(
+        <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+          <div style={{width:8,height:8,borderRadius:"50%",background:d.c,flexShrink:0}}/>
+          <div style={{width:50,fontSize:11,color:"var(--text2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.l}</div>
+          <div style={{flex:1,height:6,background:"#EEF2F6",borderRadius:3,overflow:"hidden"}}>
+            <div style={{width:`${(d.v/max)*100}%`,height:"100%",background:d.c,borderRadius:3,transition:"width .4s"}}/>
           </div>
-      }
+          <div style={{fontSize:11,fontWeight:600,color:"var(--text)",minWidth:60,textAlign:"right"}}>{fmt(d.v)}</div>
+        </div>
+      ))}
+    </div>;
+  };
+
+  /* ── Donut simples (clientes ou destinos) ── */
+  const MiniDonut = ({data, color}) => {
+    const total=data.reduce((s,d)=>s+d.v,0);
+    if(!total) return null;
+    const r=28,cx=35,cy=35,circ=2*Math.PI*r;
+    const COLS=["#1A6DC8","#D97706","#059669","#EA580C","#7C3AED","#DC2626","#DB2777","#0891B2"];
+    let off=0;
+    const segs=data.slice(0,6).map((d,i)=>{const pct=d.v/total,dash=pct*circ,seg={...d,dash,off:off*circ,c:COLS[i%COLS.length]};off+=pct;return seg;});
+    return <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <svg width="70" height="70" viewBox="0 0 70 70" style={{flexShrink:0}}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#EEF2F6" strokeWidth="10"/>
+        {segs.map((s,i)=><circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.c} strokeWidth="10"
+          strokeDasharray={`${s.dash} ${circ-s.dash}`} strokeDashoffset={circ/4-s.off}/>)}
+        <text x={cx} y={cy+4} textAnchor="middle" fill="var(--text)" fontSize="11" fontWeight="700" fontFamily="Syne">{total}</text>
+      </svg>
+      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+        {segs.map((s,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:5,fontSize:10}}>
+          <div style={{width:7,height:7,borderRadius:"50%",background:s.c,flexShrink:0}}/>
+          <span style={{color:"var(--text2)"}}>{s.l}</span>
+          <span style={{marginLeft:"auto",fontWeight:600,color:"var(--text)",paddingLeft:6}}>{s.v}</span>
+        </div>)}
+      </div>
+    </div>;
+  };
+
+  /* ── Card de mês (colapsável) ── */
+  const MesCard = ({m, idx}) => {
+    const isOpen = expanded === idx;
+    const avg = m.cnt ? m.fat / m.cnt : 0;
+    const pctTotal = totalFat ? (m.fat / totalFat * 100) : 0;
+    return <div className="card" style={{border:isOpen?`2px solid ${m.color}`:"1px solid var(--border)",transition:"border .2s"}}>
+      {/* Header com KPIs inline */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",marginBottom:isOpen?12:0}} onClick={()=>setExpanded(isOpen?null:idx)}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{width:10,height:10,borderRadius:"50%",background:m.color,flexShrink:0}}/>
+          <strong style={{fontSize:14,color:"var(--text)"}}>{m.label}</strong>
+          <span style={{fontSize:11,color:"var(--text3)",marginLeft:4}}>{m.cnt} pedidos</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:16}}>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:m.color}}>{fmtUSD(m.fat)}</div>
+            <div style={{fontSize:10,color:"var(--text3)"}}>{pctTotal.toFixed(1)}% da carteira</div>
+          </div>
+          <div style={{fontSize:16,color:"var(--text3)",transition:"transform .2s",transform:isOpen?"rotate(180deg)":"rotate(0deg)"}}>▾</div>
+        </div>
+      </div>
+
+      {/* Conteúdo expandido */}
+      {isOpen && <>
+        {/* KPIs do mês */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14,padding:"10px 0",borderTop:"1px solid var(--border)",borderBottom:"1px solid var(--border)"}}>
+          <div><div style={{fontSize:10,color:"var(--text3)",fontWeight:600,letterSpacing:.4,textTransform:"uppercase"}}>Pedidos</div><div style={{fontFamily:"Syne",fontSize:18,fontWeight:700,color:"var(--text)"}}>{m.cnt}</div></div>
+          <div><div style={{fontSize:10,color:"var(--text3)",fontWeight:600,letterSpacing:.4,textTransform:"uppercase"}}>Faturamento</div><div style={{fontFamily:"Syne",fontSize:14,fontWeight:700,color:m.color}}>{fmtUSD(m.fat)}</div></div>
+          <div><div style={{fontSize:10,color:"var(--text3)",fontWeight:600,letterSpacing:.4,textTransform:"uppercase"}}>Média/CNTR</div><div style={{fontFamily:"Syne",fontSize:14,fontWeight:700,color:"var(--text)"}}>{fmtUSD(avg)}</div></div>
+          <div><div style={{fontSize:10,color:"var(--text3)",fontWeight:600,letterSpacing:.4,textTransform:"uppercase"}}>% Carteira</div><div style={{fontFamily:"Syne",fontSize:14,fontWeight:700,color:"var(--text)"}}>{pctTotal.toFixed(1)}%</div></div>
+        </div>
+
+        {/* Gráficos: clientes + destinos lado a lado */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:600,color:"var(--text3)",letterSpacing:.5,textTransform:"uppercase",marginBottom:6}}>Por Cliente</div>
+            {m.byCli.map((c,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                <div style={{width:50,fontSize:11,color:"var(--text2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.l}</div>
+                <div style={{flex:1,height:5,background:"#EEF2F6",borderRadius:3,overflow:"hidden"}}><div style={{width:`${(c.v/m.fat)*100}%`,height:"100%",background:m.color,borderRadius:3}}/></div>
+                <div style={{fontSize:10,fontWeight:600,color:"var(--text)",minWidth:40,textAlign:"right"}}>{(c.v/m.fat*100).toFixed(0)}%</div>
+              </div>
+            ))}
+          </div>
+          <div>
+            <div style={{fontSize:10,fontWeight:600,color:"var(--text3)",letterSpacing:.5,textTransform:"uppercase",marginBottom:6}}>Destinos</div>
+            <MiniDonut data={m.byDst}/>
+          </div>
+        </div>
+
+        {/* Tabela de pedidos */}
+        <div className="tw" style={{borderRadius:8}}>
+          <table className="cart-table">
+            <thead><tr>
+              <th>Invoice</th><th>Cliente</th><th>PO#</th><th>Destino</th>
+              <th style={{textAlign:"right"}}>Valor USD</th><th>ETA</th><th>Status</th>
+            </tr></thead>
+            <tbody>{m.rows.map(r=>(
+              <tr key={r.invoice}>
+                <td><strong style={{color:m.color}}>{r.invoice}</strong></td>
+                <td style={{color:"var(--text2)"}}>{r.cliente||"—"}</td>
+                <td style={{color:"var(--text2)"}}>{fmtInt(r.po)}</td>
+                <td>{r.destino||"—"}</td>
+                <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:500}}>{fmtUSD(r.valor_usd)}</td>
+                <td style={{color:"var(--text2)"}}>{fmtDate(r.eta_pedido)}</td>
+                <td><EmbBadge v={r.status}/></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </>}
     </div>;
   };
 
@@ -1220,10 +1312,12 @@ function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
         <div><h2>Carteira de Pedidos</h2><p>Programação de embarques por período</p></div>
         <button className="btn bgx bsm" onClick={()=>exportCarteiraXLS(m1,getCartRows(m1),m2,getCartRows(m2),m3,getCartRows(m3))}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Exportar Excel (3 meses)
+          Exportar Excel
         </button>
       </div>
     </div>
+
+    {/* Seletores de mês */}
     <div className="card mb20">
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
         {[["MÊS 1",m1,setM1,"#D97706"],["MÊS 2",m2,setM2,"#1A6DC8"],["MÊS 3",m3,setM3,"#059669"]].map(([lb,val,set,col])=>(
@@ -1236,10 +1330,28 @@ function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
         ))}
       </div>
     </div>
-    <div className="g3">
-      <MesTable mes={m1} color="#D97706"/>
-      <MesTable mes={m2} color="#1A6DC8"/>
-      <MesTable mes={m3} color="#059669"/>
+
+    {/* KPIs consolidados — visão rápida dos 3 meses */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
+      <div className="kp hi"><div className="kl">Total Carteira</div><div className="kv tc" style={{fontSize:18}}>{fmtUSD(totalFat)}</div><div className="ks">{totalCnt} containers em 3 meses</div></div>
+      {months.map((m,i)=>(
+        <div key={i} className="kp"><div className="kl" style={{color:m.color}}>{m.label.split(" ")[0]}/{m.label.split(" ")[1]?.slice(2)}</div><div className="kv" style={{fontSize:16,color:m.color}}>{fmtUSD(m.fat)}</div><div className="ks">{m.cnt} pedidos</div></div>
+      ))}
+    </div>
+
+    {/* Gráfico comparativo: faturamento + containers dos 3 meses */}
+    <div className="g2 mb20">
+      <div className="card">
+        <BarCompare label="Faturamento por Mês" data={months.map(m=>({l:m.label.split(" ")[0],v:m.fat,c:m.color}))} fmt={v=>"$"+Math.round(v/1000)+"k"}/>
+      </div>
+      <div className="card">
+        <BarCompare label="Containers por Mês" data={months.map(m=>({l:m.label.split(" ")[0],v:m.cnt,c:m.color}))} fmt={v=>v+" CNTR"}/>
+      </div>
+    </div>
+
+    {/* Cards dos 3 meses — colapsáveis */}
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {months.map((m,i)=> <MesCard key={i} m={m} idx={i}/> )}
     </div>
   </div>;
 }
