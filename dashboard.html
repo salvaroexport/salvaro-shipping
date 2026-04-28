@@ -165,30 +165,30 @@ function applyRowStyles(ws, rowIdx, colCount, style) {
 function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
   const today = new Date().toLocaleDateString("pt-BR");
   const aoa = [];
-  const COLS = 14;
+  const COLS = 13;
 
   /* Row 0: title bar */
-  aoa.push(["CONTROLE OPERACIONAL DE EMBARQUES","","","","","","","","","","","","ATUALIZADO EM",today]);
+  aoa.push(["CONTROLE OPERACIONAL DE EMBARQUES","","","","","","","","","","","ATUALIZADO EM",today]);
 
   const sectionStarts = [];
-  const merges = [{s:{r:0,c:0},e:{r:0,c:11}}];
+  const merges = [{s:{r:0,c:0},e:{r:0,c:10}}];
 
   function pushSection(mesLabel, rows) {
     aoa.push([]); /* spacer */
     const startRow = aoa.length;
     sectionStarts.push({start:startRow, dataStart:startRow+2, dataEnd:startRow+2+rows.length-1, totalRow:startRow+2+rows.length});
-    aoa.push([mesLabel,"","","","","","","","","","","","",""]);
+    aoa.push([mesLabel,"","","","","","","","","","","",""]);
     merges.push({s:{r:startRow,c:0},e:{r:startRow,c:COLS-1}});
-    aoa.push(["Nº","INV","CLIENTE","PO#","NF","DESTINO","ETA","AGENTE","BOOKING","CONTAINER","NAVIO","DL CARGA","ESTUFAGEM","TRANSP."]);
+    aoa.push(["INV","CLIENTE","PO#","NF","DESTINO","ETA","AGENTE","BOOKING","CONTAINER","NAVIO","DL CARGA","ESTUFAGEM","TRANSP."]);
     rows.forEach((r,i) => {
       aoa.push([
-        r.nr||i+1, r.invoice||"", r.cliente||"", xlInt(r.po), xlInt(r.nf), r.destino||"",
+        r.invoice||"", r.cliente||"", xlInt(r.po), xlInt(r.nf), r.destino||"",
         xlDate(r.eta_pedido), r.agente||"", xlInt(r.booking), r.container||"", r.navio||"",
         xlDate(r.dl_carga), xlDate(r.estufagem), r.transportadora||""
       ]);
     });
     const totalUSD = rows.reduce((s,r)=>s+(r.valor_usd||0),0);
-    aoa.push(["","","","TOTAL USD:","","$"+totalUSD.toFixed(2),"","","Nº CONTAINERS:",rows.length,"","","",""]);
+    aoa.push(["","","TOTAL USD:","","$"+totalUSD.toFixed(2),"","","Nº CONTAINERS:",rows.length,"","","",""]);
   }
 
   pushSection(ant, antRows);
@@ -199,8 +199,8 @@ function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
 
   /* Title row */
   for(let c=0;c<COLS;c++) applyStyle(ws, XLSX.utils.encode_cell({r:0,c}), XS.title);
-  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:12}), {font:{name:"Calibri",sz:8,color:{rgb:"6B7280"}},fill:{fgColor:{rgb:"1A6DC8"}},alignment:{horizontal:"right"},border:XS.title.border});
-  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:13}), {font:{name:"Calibri",sz:8,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A6DC8"}},alignment:{horizontal:"right"},border:XS.title.border});
+  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:11}), {font:{name:"Calibri",sz:8,color:{rgb:"6B7280"}},fill:{fgColor:{rgb:"1A6DC8"}},alignment:{horizontal:"right"},border:XS.title.border});
+  applyStyle(ws, XLSX.utils.encode_cell({r:0,c:12}), {font:{name:"Calibri",sz:8,color:{rgb:"FFFFFF"}},fill:{fgColor:{rgb:"1A6DC8"}},alignment:{horizontal:"right"},border:XS.title.border});
 
   /* Each section */
   sectionStarts.forEach(sec => {
@@ -211,13 +211,13 @@ function exportOperacionalXLS(ant, antRows, vig, vigRows, seg, segRows) {
     }
     for(let c=0;c<COLS;c++){
       const ref = XLSX.utils.encode_cell({r:sec.totalRow,c});
-      applyStyle(ws, ref, (c===5)?XS.total:XS.totalLbl);
+      applyStyle(ws, ref, (c===4)?XS.total:XS.totalLbl);
     }
   });
 
   ws["!merges"] = merges;
   ws["!cols"] = [
-    {wch:4.9},{wch:7.9},{wch:14.9},{wch:12.9},{wch:7.9},{wch:13.9},
+    {wch:8.9},{wch:14.9},{wch:12.9},{wch:8.9},{wch:13.9},
     {wch:10.9},{wch:20.9},{wch:13.9},{wch:15.9},{wch:18.9},{wch:11.9},{wch:11},{wch:10.9}
   ];
   ws["!rows"] = [{hpx:28}];
@@ -1153,31 +1153,30 @@ function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
       </div>
       <div className="tw"><table className="ops-table">
         <colgroup>
-          <col style={{width:"2.5%"}}/>
-          <col style={{width:"5%"}}/>
-          <col style={{width:"10%"}}/>
-          <col style={{width:"8%"}}/>
-          <col style={{width:"3.5%"}}/>
-          <col style={{width:"8%"}}/>
-          <col style={{width:"5%"}}/>
-          <col style={{width:"9%"}}/>
-          <col style={{width:"7%"}}/>
-          <col style={{width:"10%"}}/>
-          <col style={{width:"10%"}}/>
-          <col style={{width:"6.5%"}}/>
-          <col style={{width:"6.5%"}}/>
           <col style={{width:"5.5%"}}/>
+          <col style={{width:"10%"}}/>
+          <col style={{width:"8.5%"}}/>
+          <col style={{width:"6%"}}/>
+          <col style={{width:"8.5%"}}/>
+          <col style={{width:"5.5%"}}/>
+          <col style={{width:"9.5%"}}/>
+          <col style={{width:"7.5%"}}/>
+          <col style={{width:"10.5%"}}/>
+          <col style={{width:"10.5%"}}/>
+          <col style={{width:"6%"}}/>
+          <col style={{width:"6%"}}/>
+          <col style={{width:"6%"}}/>
         </colgroup>
-        <thead><tr><th>Nº</th><th>Invoice</th><th>Cliente</th><th>PO#</th><th>NF</th><th>Destino</th><th>ETA</th><th>Agente</th><th>Booking</th><th>Container</th><th>Navio</th><th>DL Carga</th><th>Estufagem</th><th>Transp.</th></tr></thead>
+        <thead><tr><th>Invoice</th><th>Cliente</th><th>PO#</th><th>NF</th><th>Destino</th><th>ETA</th><th>Agente</th><th>Booking</th><th>Container</th><th>Navio</th><th>DL Carga</th><th>Estufagem</th><th>Transp.</th></tr></thead>
         <tbody>{rows.length===0
-          ?<tr><td colSpan={14} className="empty">Nenhum embarque neste período</td></tr>
+          ?<tr><td colSpan={13} className="empty">Nenhum embarque neste período</td></tr>
           :rows.map((r,i)=>{
             const etaLvl=dateAlert(r.eta_pedido,null,r);
             const dlLvl=dateAlert(r.dl_carga,"booking",r);
             const estLvl=dateAlert(r.estufagem,"container",r);
             const estDone = ["NO PORTO","EMBARCADO","ENTREGUE"].includes(r.status);
             return <tr key={r.invoice}>
-              <td className="m">{r.nr||i+1}</td><td><strong>{r.invoice}</strong></td>
+              <td><strong>{r.invoice}</strong></td>
               <td>{r.cliente||"—"}</td><td className="m">{fmtInt(r.po)}</td><td>{fmtInt(r.nf)}</td>
               <td>{r.destino||"—"}</td>
               <td style={alertStyle(etaLvl)}>{fmtDate(r.eta_pedido)}{etaLvl==="overdue"&&" ⚠"}</td>
