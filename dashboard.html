@@ -384,6 +384,8 @@ const CSS = `
 .kv.tc{color:var(--blue)}.kv.gc{color:var(--gold)}.kv.gr{color:var(--green)}
 .ks{font-size:11px;color:var(--text3);margin-top:5px}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.sel-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.kpi-grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .mb16{margin-bottom:16px}.mb20{margin-bottom:20px}
 .tw{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)}
@@ -456,6 +458,62 @@ td.m{color:var(--text2)} td.r{text-align:right;font-variant-numeric:tabular-nums
 .cart-table tbody tr:hover{background:#F4F8FF}
 .cart-table td{padding:6px 10px;color:var(--text);white-space:nowrap}
 @media(max-width:860px){.sidebar{width:52px;min-width:52px}.logo p,.ni span,.sft{display:none}.ni{justify-content:center;padding:10px}.page{padding:14px}.g2,.g3{grid-template-columns:1fr}.kg{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){
+  /* Sidebar → bottom tab bar */
+  .app{flex-direction:column!important}
+  .sidebar{width:100%!important;min-width:0!important;height:auto!important;flex-direction:row!important;border-right:none!important;border-top:1px solid var(--border)!important;position:fixed;bottom:0;left:0;right:0;z-index:999;box-shadow:0 -2px 8px rgba(0,0,0,.08)!important;padding:0!important;order:2}
+  .logo,.nlbl,.sft{display:none!important}
+  .nav{display:flex!important;flex-direction:row!important;justify-content:space-around;width:100%;padding:0!important;gap:0!important}
+  .ni{flex-direction:column!important;padding:8px 4px!important;gap:2px!important;font-size:9px;min-width:0;flex:1;align-items:center!important;justify-content:center!important;border-radius:0!important}
+  .ni span{display:block!important;font-size:9px!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px}
+  .ni svg{width:18px;height:18px}
+  .ni.on{background:transparent!important;color:var(--blue)!important}
+  .ni.on::after{content:'';display:block;width:20px;height:2px;background:var(--blue);border-radius:1px;margin-top:2px}
+  .main{padding-bottom:68px!important;width:100%!important}
+  /* Page content */
+  .page{padding:12px!important}
+  .ph h2{font-size:18px!important}
+  .ph p{font-size:11px!important}
+  /* KPIs */
+  .kg{grid-template-columns:1fr 1fr!important;gap:8px!important;margin-bottom:12px!important}
+  .kp{padding:10px!important}
+  .kl{font-size:9px!important}
+  .kv{font-size:18px!important}
+  .ks{font-size:9px!important}
+  /* Cards */
+  .card{padding:12px!important;border-radius:10px!important}
+  .mb20{margin-bottom:10px!important}
+  /* Tables - horizontal scroll with visual hint */
+  .tw{position:relative;-webkit-overflow-scrolling:touch}
+  .tw::after{content:'';position:absolute;top:0;right:0;bottom:0;width:20px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.8));pointer-events:none;border-radius:0 var(--radius) var(--radius) 0}
+  .ops-table{font-size:10px!important;table-layout:auto!important}
+  .ops-table th,.ops-table td{padding:5px 4px!important;font-size:10px!important}
+  .cart-table{font-size:11px!important}
+  .cart-table th,.cart-table td{padding:5px 6px!important}
+  /* Grids */
+  .g2,.g3{grid-template-columns:1fr!important;gap:10px!important}
+  /* Selectors row */
+  .sel{font-size:12px!important;padding:6px 8px!important}
+  /* Charts */
+  .ct{font-size:12px!important}
+  /* Modal / form */
+  .modal{max-width:100%!important;margin:8px!important;border-radius:12px!important}
+  .fr{grid-template-columns:1fr!important}
+  /* Filters bar */
+  .fbar{flex-direction:column!important;gap:6px!important}
+  .fbar select,.fbar input{width:100%!important;font-size:12px!important}
+  /* Bar chart labels */
+  .bl2{width:60px!important;font-size:10px!important}
+  .bv{width:auto!important;font-size:10px!important;min-width:55px}
+  /* Tabs */
+  .tab{padding:8px 10px!important;font-size:11px!important}
+  /* Badge */
+  .badge{font-size:9px!important;padding:2px 6px!important}
+  .sel-grid{grid-template-columns:1fr!important;gap:8px!important}
+  .kpi-grid4{grid-template-columns:1fr 1fr!important;gap:8px!important}
+  /* Login */
+  .login-box{width:90%!important;max-width:360px}
+}
 `;
 
 /* ── Badges ── */
@@ -1145,7 +1203,7 @@ function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
       </div>
     </div>
     <div className="card mb20">
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
+      <div className="sel-grid">
         {[["Mês Anterior",ant,setAnt,"#D97706"],["Mês Vigente",vig,setVig,"#1A6DC8"],["Mês Seguinte",seg,setSeg,"#059669"]].map(([lb,val,set,col])=>(
           <div key={lb}>
             <div style={{fontSize:11,fontWeight:600,color:"var(--text2)",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>{lb}</div>
@@ -1257,7 +1315,7 @@ function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
       {/* Conteúdo expandido */}
       {isOpen && <>
         {/* KPIs do mês */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14,padding:"10px 0",borderTop:"1px solid var(--border)",borderBottom:"1px solid var(--border)"}}>
+        <div className="kpi-grid4" style={{padding:"10px 0",borderTop:"1px solid var(--border)",borderBottom:"1px solid var(--border)",marginBottom:14}}>
           <div><div style={{fontSize:10,color:"var(--text3)",fontWeight:600,letterSpacing:.4,textTransform:"uppercase"}}>Pedidos</div><div style={{fontFamily:"Syne",fontSize:18,fontWeight:700,color:"var(--text)"}}>{m.cnt}</div></div>
           <div><div style={{fontSize:10,color:"var(--text3)",fontWeight:600,letterSpacing:.4,textTransform:"uppercase"}}>Faturamento</div><div style={{fontFamily:"Syne",fontSize:14,fontWeight:700,color:m.color}}>{fmtUSD(m.fat)}</div></div>
           <div><div style={{fontSize:10,color:"var(--text3)",fontWeight:600,letterSpacing:.4,textTransform:"uppercase"}}>Média/CNTR</div><div style={{fontFamily:"Syne",fontSize:14,fontWeight:700,color:"var(--text)"}}>{fmtUSD(avg)}</div></div>
@@ -1265,7 +1323,7 @@ function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
         </div>
 
         {/* Gráficos: clientes + destinos lado a lado */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
+        <div className="g2" style={{marginBottom:14}}>
           <div>
             <div style={{fontSize:10,fontWeight:600,color:"var(--text3)",letterSpacing:.5,textTransform:"uppercase",marginBottom:6}}>Por Cliente</div>
             {m.byCli.map((c,i)=>(
@@ -1319,7 +1377,7 @@ function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
 
     {/* Seletores de mês */}
     <div className="card mb20">
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
+      <div className="sel-grid">
         {[["MÊS 1",m1,setM1,"#D97706"],["MÊS 2",m2,setM2,"#1A6DC8"],["MÊS 3",m3,setM3,"#059669"]].map(([lb,val,set,col])=>(
           <div key={lb}>
             <div style={{fontSize:11,fontWeight:600,color:"var(--text2)",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>{lb}</div>
@@ -1332,7 +1390,7 @@ function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
     </div>
 
     {/* KPIs consolidados — visão rápida dos 3 meses */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
+    <div className="kpi-grid4" style={{marginBottom:16}}>
       <div className="kp hi"><div className="kl">Total Carteira</div><div className="kv tc" style={{fontSize:18}}>{fmtUSD(totalFat)}</div><div className="ks">{totalCnt} containers em 3 meses</div></div>
       {months.map((m,i)=>(
         <div key={i} className="kp"><div className="kl" style={{color:m.color}}>{m.label.split(" ")[0]}/{m.label.split(" ")[1]?.slice(2)}</div><div className="kv" style={{fontSize:16,color:m.color}}>{fmtUSD(m.fat)}</div><div className="ks">{m.cnt} pedidos</div></div>
