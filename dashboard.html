@@ -776,9 +776,10 @@ function App() {
   const [opsVig,setOpsVig]=usePersist("opsVig",MESES[_ci]+" "+_cy);
   const [opsSeg,setOpsSeg]=usePersist("opsSeg",MESES[_ni]+" "+_ny);
   /* Carteira - 3 meses */
-  const [cartM1,setCartM1]=usePersist("cartM1",MESES[_ci]+" "+_cy);
-  const [cartM2,setCartM2]=usePersist("cartM2",MESES[_ni]+" "+_ny);
-  const [cartM3,setCartM3]=usePersist("cartM3",MESES[_n2]+" "+_n2y);
+  /* Carteira: sempre mês vigente + 2 próximos (automático) */
+  const cartM1 = MESES[_ci]+" "+_cy;
+  const cartM2 = MESES[_ni]+" "+_ny;
+  const cartM3 = MESES[_n2]+" "+_n2y;
   /* Dashboard - ano */
   const [dashYr,setDashYr]=usePersist("dashYr","2026");
   /* Base de Dados - filtros */
@@ -918,7 +919,7 @@ function App() {
           : <>
               {pg==="dash" && <PgDash recs={recs} yr={dashYr} setYr={setDashYr}/>}
               {pg==="ops"  && <PgOps  recs={recs} ant={opsAnt} setAnt={setOpsAnt} vig={opsVig} setVig={setOpsVig} seg={opsSeg} setSeg={setOpsSeg}/>}
-              {pg==="cart" && <PgCart recs={recs} m1={cartM1} setM1={setCartM1} m2={cartM2} setM2={setCartM2} m3={cartM3} setM3={setCartM3}/>}
+              {pg==="cart" && <PgCart recs={recs} m1={cartM1} m2={cartM2} m3={cartM3}/>}
               {pg==="base" && <PgBase recs={recs} onSave={save} onDel={remove} notify={notify} q={baseQ} setQ={setBaseQ} fC={baseFC} setFC={setBaseFC} fM={baseFM} setFM={setBaseFM} fD={baseFD} setFD={setBaseFD}/>}
               {pg==="rel"  && <PgRel  recs={recs} tab={relTab} setTab={setRelTab} yr={relYr} setYr={setRelYr} mes={relMes} setMes={setRelMes}/>}
             </>
@@ -1223,8 +1224,7 @@ function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
 /* ══════════════════════════════════════════
    CARTEIRA — BI Dashboard para diretoria
 ══════════════════════════════════════════ */
-function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
-  const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
+function PgCart({recs, m1, m2, m3}) {
   const [expanded,setExpanded]=useState(null); /* which month is expanded */
 
   function getCartRows(mes){ return recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0)); }
@@ -1375,19 +1375,7 @@ function PgCart({recs, m1, setM1, m2, setM2, m3, setM3}) {
       </div>
     </div>
 
-    {/* Seletores de mês */}
-    <div className="card mb20">
-      <div className="sel-grid">
-        {[["MÊS 1",m1,setM1,"#D97706"],["MÊS 2",m2,setM2,"#1A6DC8"],["MÊS 3",m3,setM3,"#059669"]].map(([lb,val,set,col])=>(
-          <div key={lb}>
-            <div style={{fontSize:11,fontWeight:600,color:"var(--text2)",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>{lb}</div>
-            <select className="sel" style={{width:"100%",borderColor:col+"66"}} value={val} onChange={e=>set(e.target.value)}>
-              {avail.map(m=><option key={m}>{m}</option>)}
-            </select>
-          </div>
-        ))}
-      </div>
-    </div>
+    {/* Período automático: mês vigente + 2 próximos */}
 
     {/* KPIs consolidados — visão rápida dos 3 meses */}
     <div className="kpi-grid4" style={{marginBottom:16}}>
