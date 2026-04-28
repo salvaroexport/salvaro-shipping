@@ -495,13 +495,13 @@ const Field = ({label,field,type="text",opts=null,form,upd}) => (
   </div>
 );
 
-const Bar = ({data,color="#1A6DC8",fmt}) => {
+const Bar = ({data,color="#1A6DC8",fmt,total}) => {
   const max=Math.max(...data.map(d=>d.v),1);
   return <div>{data.map((d,i)=>(
     <div key={i} className="br2">
       <div className="bl2" title={d.l}>{d.l}</div>
       <div className="bt"><div className="bf" style={{width:`${(d.v/max)*100}%`,background:color}}/></div>
-      <div className="bv">{fmt?fmt(d.v):d.v}</div>
+      <div className="bv">{fmt?fmt(d.v):d.v}{total?<span style={{color:"#94A3B8",fontSize:10,marginLeft:3}}>({(d.v/total*100).toFixed(1)}%)</span>:null}</div>
     </div>
   ))}</div>;
 };
@@ -994,13 +994,13 @@ function PgDash({recs, yr, setYr}) {
         <LineChart data={byMonthChrono} fmt={v=>"$"+Math.round(v/1000)+"k"} height={260}/>
       </div>
       <div className="g2 mb20">
-        <div className="card"><div className="ct">Faturamento por Cliente</div><Bar data={byCli} color="#D97706" fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
+        <div className="card"><div className="ct">Faturamento por Cliente</div><Bar data={byCli} color="#D97706" fmt={v=>"$"+Math.round(v/1000)+"k"} total={fat}/></div>
         <div className="card"><div className="ct">Destinos (containers)</div><Donut data={byDst}/></div>
       </div>
     </> : <>
       <div className="g2 mb20">
         <div className="card"><div className="ct">Faturamento por Mês</div><Bar data={byMonth} fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
-        <div className="card"><div className="ct">Faturamento por Cliente</div><Bar data={byCli} color="#D97706" fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
+        <div className="card"><div className="ct">Faturamento por Cliente</div><Bar data={byCli} color="#D97706" fmt={v=>"$"+Math.round(v/1000)+"k"} total={fat}/></div>
       </div>
       <div className="g2 mb20">
         <div className="card"><div className="ct">Destinos (containers)</div><Donut data={byDst}/></div>
@@ -1116,6 +1116,7 @@ function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
             const etaLvl=dateAlert(r.eta_pedido,null,r);
             const dlLvl=dateAlert(r.dl_carga,"booking",r);
             const estLvl=dateAlert(r.estufagem,"container",r);
+            const estDone = ["NO PORTO","EMBARCADO","ENTREGUE"].includes(r.status);
             return <tr key={r.invoice}>
               <td className="m">{r.nr||i+1}</td><td><strong>{r.invoice}</strong></td>
               <td>{r.cliente||"—"}</td><td className="m">{fmtInt(r.po)}</td><td>{fmtInt(r.nf)}</td>
@@ -1124,7 +1125,7 @@ function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
               <td>{r.agente?.split(" -")[0]||"—"}</td><td className="m">{fmtInt(r.booking)}</td>
               <td>{r.container||"—"}</td><td className="m">{r.navio||"—"}</td>
               <td style={alertStyle(dlLvl)}>{fmtDate(r.dl_carga)}{dlLvl==="overdue"&&" ⚠"}{dlLvl==="soon"&&" ⏳"}</td>
-              <td style={alertStyle(estLvl)}>{fmtDate(r.estufagem)}{estLvl==="overdue"&&" ⚠"}{estLvl==="soon"&&" ⏳"}</td>
+              <td style={estDone?{color:"#059669",fontWeight:600}:alertStyle(estLvl)}>{fmtDate(r.estufagem)}{estDone&&" ✓"}{!estDone&&estLvl==="overdue"&&" ⚠"}{!estDone&&estLvl==="soon"&&" ⏳"}</td>
               <td className="m">{r.transportadora||"—"}</td>
             </tr>;
           })
