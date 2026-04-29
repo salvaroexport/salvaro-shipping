@@ -1430,11 +1430,11 @@ function calcPgtoPrevisto(r) {
 /* Categorizar pedido por status do workflow */
 function catRecebimento(r) {
   const s = r.status || "";
-  if(s==="EMBARCADO") return "EMBARCADO";
+  if(s==="EMBARCADO"||s==="ENTREGUE") return "EMBARCADO";
   if(s==="NO PORTO") return "PORTO";
-  if(s==="AGD ESTUFAGEM"||s==="EM PRODUÇÃO") return "EM CASA PRONTO";
-  if(s==="CARTEIRA"||!s) return "FATURADOS NÃO PRONTOS";
-  return "EMBARCADO";
+  if(s==="AGD ESTUFAGEM") return "EM CASA PRONTO";
+  if(s==="EM PRODUÇÃO") return "FATURADOS NÃO PRONTOS";
+  return null; /* CARTEIRA ou vazio = não faturado, não aparece */
 }
 
 const CAT_COLORS = {
@@ -1446,17 +1446,18 @@ const CAT_COLORS = {
 };
 
 function PgRec({recs:allRecs, onSave, refresh, notify}) {
-  /* Apenas registros ao vivo (não históricos) que têm NF (faturados) e não foram recebidos */
+  /* Apenas registros live de 2026 que têm NF (faturados) e não foram recebidos */
   const pendentes = useMemo(()=>{
-    return allRecs.filter(r=>!r._hist && r.nf && r.status_financeiro!=="RECEBIDO").map(r=>{
+    return allRecs.filter(r=>!r._hist && r.nf && r.status_financeiro!=="RECEBIDO" && r.mes_ref && r.mes_ref.endsWith("2026")).map(r=>{
       const prev = calcPgtoPrevisto(r);
       const cat = catRecebimento(r);
+      if(!cat) return null; /* sem categoria = não aparece (ex: CARTEIRA) */
       const hoje = new Date(); hoje.setHours(0,0,0,0);
       const prevDate = prev ? new Date(prev+"T00:00:00") : null;
       const diasAte = prevDate ? Math.round((prevDate - hoje)/(1000*60*60*24)) : null;
-      const atrasado = cat==="EMBARCADO" && prevDate && prevDate < hoje;
+      const atrasado = prevDate && prevDate < hoje;
       return {...r, _prev:prev, _cat:atrasado?"ATRASADO":cat, _diasAte:diasAte};
-    }).sort((a,b)=>(a._diasAte||999)-(b._diasAte||999));
+    }).filter(Boolean).sort((a,b)=>(a._diasAte||999)-(b._diasAte||999));
   },[allRecs]);
 
   /* Recebidos de 2026 para análise */
