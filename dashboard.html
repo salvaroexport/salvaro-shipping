@@ -1411,16 +1411,16 @@ function PgCart({recs, m1, m2, m3}) {
 const REGRA_PGTO = {
   "ECMD":      {tipo:"eta",     label:"ETA (chegada)"},
   "KLUMB":     {tipo:"eta",     label:"ETA (chegada)"},
-  "METRIE":    {tipo:"embarque",dias:30, label:"Embarque +30d"},
-  "WOODGRAIN": {tipo:"embarque",dias:30, label:"Embarque +30d"},
+  "METRIE":    {tipo:"etd",dias:30, label:"ETD +30d"},
+  "WOODGRAIN": {tipo:"etd",dias:30, label:"ETD +30d"},
 };
 
 function calcPgtoPrevisto(r) {
   const regra = REGRA_PGTO[r.cliente];
   if(!regra) return null;
-  if(regra.tipo==="eta" && r.eta_pedido) return r.eta_pedido;
-  if(regra.tipo==="embarque" && r.estufagem) {
-    const d = new Date(r.estufagem+"T00:00:00");
+  if(regra.tipo==="eta" && r.eta) return r.eta;
+  if(regra.tipo==="etd" && r.etd) {
+    const d = new Date(r.etd+"T00:00:00");
     d.setDate(d.getDate()+(regra.dias||30));
     return d.toISOString().slice(0,10);
   }
@@ -1544,7 +1544,7 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
           <table className="cart-table">
             <thead><tr>
               <th>Invoice</th><th>Cliente</th><th>PO#</th><th style={{textAlign:"right"}}>Valor USD</th>
-              <th>Embarque</th><th>Pgto Previsto</th><th>Dias</th><th>Ação</th>
+              <th>ETD</th><th>ETA</th><th>Pgto Previsto</th><th>Dias</th><th>Ação</th>
             </tr></thead>
             <tbody>{rows.map(r=>(
               <tr key={r.invoice}>
@@ -1552,7 +1552,8 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
                 <td>{r.cliente||"—"}</td>
                 <td>{fmtInt(r.po)}</td>
                 <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:500}}>{fmtUSD(r.valor_usd)}</td>
-                <td>{fmtDate(r.estufagem)}</td>
+                <td>{fmtDate(r.etd)}</td>
+                <td>{fmtDate(r.eta)}</td>
                 <td>{r._prev?fmtDate(r._prev):"—"}</td>
                 <td style={{fontWeight:600,color:r._diasAte!==null?(r._diasAte<0?"#059669":"#991B1B"):"var(--text3)"}}>
                   {r._diasAte!==null?(r._diasAte<=0?`${Math.abs(r._diasAte)}d`:`+${r._diasAte}d`):"—"}
@@ -1640,11 +1641,11 @@ function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, f
     return true;
   }),[recs,q,fC,fM,fD]);
 
-  const E0={invoice:"",cliente:"",po:"",nf:"",porto_carga:"IMBITUBA",destino:"",navio:"",container:"",booking:"",transportadora:"",valor_usd:"",frete_usd:"",agente:"",isf_docs:"",bl:"",status_doc:"PENDENTE",dl_carga:"",estufagem:"",eta_pedido:"",status:"",mes_ref:""};
+  const E0={invoice:"",cliente:"",po:"",nf:"",porto_carga:"IMBITUBA",destino:"",navio:"",container:"",booking:"",transportadora:"",valor_usd:"",frete_usd:"",agente:"",isf_docs:"",bl:"",status_doc:"PENDENTE",dl_carga:"",estufagem:"",eta_pedido:"",etd:"",eta:"",status:"",mes_ref:""};
   const [form,setForm]=useState(E0);
   const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
 
-  function openEdit(r){setForm({invoice:r.invoice||"",cliente:r.cliente||"",po:r.po||"",nf:r.nf||"",porto_carga:r.porto_carga||"IMBITUBA",destino:r.destino||"",navio:r.navio||"",container:r.container||"",booking:r.booking||"",transportadora:r.transportadora||"",valor_usd:r.valor_usd||"",frete_usd:r.frete_usd||"",agente:r.agente||"",isf_docs:r.isf_docs||"",bl:r.bl||"",status_doc:r.status_doc||"PENDENTE",dl_carga:r.dl_carga||"",estufagem:r.estufagem||"",eta_pedido:r.eta_pedido||"",status:r.status||"",mes_ref:r.mes_ref||""});setModal(r);}
+  function openEdit(r){setForm({invoice:r.invoice||"",cliente:r.cliente||"",po:r.po||"",nf:r.nf||"",porto_carga:r.porto_carga||"IMBITUBA",destino:r.destino||"",navio:r.navio||"",container:r.container||"",booking:r.booking||"",transportadora:r.transportadora||"",valor_usd:r.valor_usd||"",frete_usd:r.frete_usd||"",agente:r.agente||"",isf_docs:r.isf_docs||"",bl:r.bl||"",status_doc:r.status_doc||"PENDENTE",dl_carga:r.dl_carga||"",estufagem:r.estufagem||"",eta_pedido:r.eta_pedido||"",etd:r.etd||"",eta:r.eta||"",status:r.status||"",mes_ref:r.mes_ref||""});setModal(r);}
 
   /* Estado para confirmação de sobrescrita por duplicidade */
   const [dupConfirm,setDupConfirm]=useState(null);
@@ -1735,7 +1736,7 @@ function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, f
           <div className="fr mb16"><Field label="Valor USD" field="valor_usd" type="number" form={form} upd={upd}/><Field label="Frete USD" field="frete_usd" type="number" form={form} upd={upd}/><Field label="Agente" field="agente" form={form} upd={upd}/></div>
           <hr className="dv"/>
           <div className="st">Documentação e Datas</div>
-          <div className="fr"><Field label="ISF/DOCS" field="isf_docs" type="date" form={form} upd={upd}/><Field label="BL" field="bl" type="date" form={form} upd={upd}/><Field label="Status Doc" field="status_doc" opts={STATUS_DOC} form={form} upd={upd}/><Field label="DL Carga" field="dl_carga" type="date" form={form} upd={upd}/><Field label="Estufagem" field="estufagem" type="date" form={form} upd={upd}/><Field label="ETA Pedido" field="eta_pedido" type="date" form={form} upd={upd}/><Field label="Status" field="status" opts={STATUS_EMB} form={form} upd={upd}/></div>
+          <div className="fr"><Field label="ISF/DOCS" field="isf_docs" type="date" form={form} upd={upd}/><Field label="BL" field="bl" type="date" form={form} upd={upd}/><Field label="Status Doc" field="status_doc" opts={STATUS_DOC} form={form} upd={upd}/><Field label="DL Carga" field="dl_carga" type="date" form={form} upd={upd}/><Field label="Estufagem" field="estufagem" type="date" form={form} upd={upd}/><Field label="ETA Pedido" field="eta_pedido" type="date" form={form} upd={upd}/><Field label="ETD" field="etd" type="date" form={form} upd={upd}/><Field label="ETA" field="eta" type="date" form={form} upd={upd}/><Field label="Status" field="status" opts={STATUS_EMB} form={form} upd={upd}/></div>
           <div className="mac"><button className="btn bg2" onClick={()=>setModal(null)}>Cancelar</button><button className="btn bp" onClick={hSave} disabled={saving}>{saving?"Salvando...":"Salvar"}</button></div>
         </div>
       </div>
