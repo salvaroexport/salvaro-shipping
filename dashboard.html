@@ -673,6 +673,7 @@ const IC = {
   dash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
   ops:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="12" y2="16"/></svg>,
   cart: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 001.99 1.61h9.72a2 2 0 001.99-1.61L23 6H6"/></svg>,
+  rec:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>,
   db:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>,
   rep:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
 };
@@ -878,6 +879,7 @@ function App() {
     {id:"dash",ic:IC.dash,lb:"Dashboard"},
     {id:"ops", ic:IC.ops, lb:"Operacional"},
     {id:"cart",ic:IC.cart,lb:"Carteira"},
+    {id:"rec", ic:IC.rec, lb:"Recebimentos"},
     {id:"base",ic:IC.db,  lb:"Base de Dados"},
     {id:"rel", ic:IC.rep, lb:"Relatórios"},
   ];
@@ -920,6 +922,7 @@ function App() {
               {pg==="dash" && <PgDash recs={recs} yr={dashYr} setYr={setDashYr}/>}
               {pg==="ops"  && <PgOps  recs={recs} ant={opsAnt} setAnt={setOpsAnt} vig={opsVig} setVig={setOpsVig} seg={opsSeg} setSeg={setOpsSeg}/>}
               {pg==="cart" && <PgCart recs={recs} m1={cartM1} m2={cartM2} m3={cartM3}/>}
+              {pg==="rec"  && <PgRec  recs={recs} onSave={save} refresh={refresh} notify={notify}/>}
               {pg==="base" && <PgBase recs={recs} onSave={save} onDel={remove} notify={notify} q={baseQ} setQ={setBaseQ} fC={baseFC} setFC={setBaseFC} fM={baseFM} setFM={setBaseFM} fD={baseFD} setFD={setBaseFD}/>}
               {pg==="rel"  && <PgRel  recs={recs} tab={relTab} setTab={setRelTab} yr={relYr} setYr={setRelYr} mes={relMes} setMes={setRelMes}/>}
             </>
@@ -1398,6 +1401,226 @@ function PgCart({recs, m1, m2, m3}) {
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       {months.map((m,i)=> <MesCard key={i} m={m} idx={i}/> )}
     </div>
+  </div>;
+}
+
+/* ══════════════════════════════════════════
+   RECEBIMENTOS — Controle financeiro
+══════════════════════════════════════════ */
+/* Regras de previsão de pagamento por cliente */
+const REGRA_PGTO = {
+  "ECMD":      {tipo:"eta",     label:"ETA (chegada)"},
+  "KLUMB":     {tipo:"eta",     label:"ETA (chegada)"},
+  "METRIE":    {tipo:"embarque",dias:30, label:"Embarque +30d"},
+  "WOODGRAIN": {tipo:"embarque",dias:30, label:"Embarque +30d"},
+};
+
+function calcPgtoPrevisto(r) {
+  const regra = REGRA_PGTO[r.cliente];
+  if(!regra) return null;
+  if(regra.tipo==="eta" && r.eta_pedido) return r.eta_pedido;
+  if(regra.tipo==="embarque" && r.estufagem) {
+    const d = new Date(r.estufagem+"T00:00:00");
+    d.setDate(d.getDate()+(regra.dias||30));
+    return d.toISOString().slice(0,10);
+  }
+  return null;
+}
+
+/* Categorizar pedido por status do workflow */
+function catRecebimento(r) {
+  const s = r.status || "";
+  if(s==="EMBARCADO") return "EMBARCADO";
+  if(s==="NO PORTO") return "PORTO";
+  if(s==="AGD ESTUFAGEM"||s==="EM PRODUÇÃO") return "EM CASA PRONTO";
+  if(s==="CARTEIRA"||!s) return "FATURADOS NÃO PRONTOS";
+  return "EMBARCADO";
+}
+
+const CAT_COLORS = {
+  "EMBARCADO":            {bg:"#DBEAFE",color:"#1E40AF",border:"#BFDBFE"},
+  "ATRASADO":             {bg:"#FEE2E2",color:"#991B1B",border:"#FECACA"},
+  "FATURADOS NÃO PRONTOS":{bg:"#FEF3C7",color:"#92400E",border:"#FDE68A"},
+  "EM CASA PRONTO":       {bg:"#E0F2FE",color:"#075985",border:"#BAE6FD"},
+  "PORTO":                {bg:"#FFEDD5",color:"#9A3412",border:"#FED7AA"},
+};
+
+function PgRec({recs:allRecs, onSave, refresh, notify}) {
+  /* Apenas registros ao vivo (não históricos) que têm NF (faturados) e não foram recebidos */
+  const pendentes = useMemo(()=>{
+    return allRecs.filter(r=>!r._hist && r.nf && r.status_financeiro!=="RECEBIDO").map(r=>{
+      const prev = calcPgtoPrevisto(r);
+      const cat = catRecebimento(r);
+      const hoje = new Date(); hoje.setHours(0,0,0,0);
+      const prevDate = prev ? new Date(prev+"T00:00:00") : null;
+      const diasAte = prevDate ? Math.round((prevDate - hoje)/(1000*60*60*24)) : null;
+      const atrasado = cat==="EMBARCADO" && prevDate && prevDate < hoje;
+      return {...r, _prev:prev, _cat:atrasado?"ATRASADO":cat, _diasAte:diasAte};
+    }).sort((a,b)=>(a._diasAte||999)-(b._diasAte||999));
+  },[allRecs]);
+
+  /* Recebidos recentes (últimos 30 dias) para análise */
+  const recebidos = useMemo(()=>{
+    const corte = new Date(); corte.setDate(corte.getDate()-90);
+    return allRecs.filter(r=>!r._hist && r.data_pagamento).map(r=>{
+      const prev = calcPgtoPrevisto(r);
+      const real = r.data_pagamento;
+      const diff = prev && real ? Math.round((new Date(real+"T00:00:00")-new Date(prev+"T00:00:00"))/(1000*60*60*24)) : null;
+      return {...r, _prev:prev, _diff:diff};
+    }).filter(r=>new Date(r.data_pagamento+"T00:00:00")>=corte);
+  },[allRecs]);
+
+  /* KPIs */
+  const totalPendente = pendentes.reduce((s,r)=>s+(r.valor_usd||0),0);
+  const cntPendente = pendentes.length;
+  const cats = useMemo(()=>{
+    const m = {};
+    pendentes.forEach(r=>{
+      if(!m[r._cat]) m[r._cat]={cnt:0,val:0};
+      m[r._cat].cnt++; m[r._cat].val+=(r.valor_usd||0);
+    });
+    return m;
+  },[pendentes]);
+
+  /* Prazo médio por cliente */
+  const prazoMedio = useMemo(()=>{
+    const m = {};
+    recebidos.forEach(r=>{
+      if(r._diff!==null){
+        if(!m[r.cliente]) m[r.cliente]={sum:0,cnt:0};
+        m[r.cliente].sum+=r._diff; m[r.cliente].cnt++;
+      }
+    });
+    return Object.entries(m).map(([cli,d])=>({cli,avg:Math.round(d.sum/d.cnt),cnt:d.cnt})).sort((a,b)=>a.avg-b.avg);
+  },[recebidos]);
+
+  /* ── Marcar como recebido ── */
+  async function markPaid(r) {
+    const today = new Date().toISOString().slice(0,10);
+    const {error} = await db.from("exportacoes").update({data_pagamento:today, status_financeiro:"RECEBIDO"}).eq("invoice",r.invoice);
+    if(error){notify("Erro: "+error.message,"err");return;}
+    await refresh(); notify(`Invoice ${r.invoice} marcada como recebida`);
+  }
+
+  /* ── Desfazer recebimento ── */
+  async function undoPaid(r) {
+    const {error} = await db.from("exportacoes").update({data_pagamento:null, status_financeiro:"PENDENTE"}).eq("invoice",r.invoice);
+    if(error){notify("Erro: "+error.message,"err");return;}
+    await refresh(); notify(`Invoice ${r.invoice} voltou para pendente`);
+  }
+
+  const CAT_ORDER = ["ATRASADO","EMBARCADO","PORTO","EM CASA PRONTO","FATURADOS NÃO PRONTOS"];
+
+  return <div className="page">
+    <div className="ph">
+      <h2>Recebimentos</h2>
+      <p>Controle de pagamentos pendentes — pedidos faturados</p>
+    </div>
+
+    {/* KPIs */}
+    <div className="kpi-grid4" style={{marginBottom:16}}>
+      <div className="kp hi"><div className="kl">Total a Receber</div><div className="kv tc" style={{fontSize:18}}>{fmtUSD(totalPendente)}</div><div className="ks">{cntPendente} pedidos pendentes</div></div>
+      {CAT_ORDER.filter(c=>cats[c]).map(c=>(
+        <div key={c} className="kp" style={{borderLeft:`3px solid ${CAT_COLORS[c]?.border||"#E5E7EB"}`}}>
+          <div className="kl">{c}</div>
+          <div className="kv" style={{fontSize:16}}>{cats[c].cnt}</div>
+          <div className="ks">{fmtUSD(cats[c].val)}</div>
+        </div>
+      ))}
+    </div>
+
+    {/* Tabela por categorias */}
+    {CAT_ORDER.filter(c=>pendentes.some(r=>r._cat===c)).map(cat=>{
+      const rows = pendentes.filter(r=>r._cat===cat);
+      const cc = CAT_COLORS[cat]||{};
+      return <div key={cat} className="card" style={{marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{background:cc.bg,color:cc.color,border:`1px solid ${cc.border}`,padding:"3px 10px",borderRadius:12,fontSize:11,fontWeight:600}}>{cat}</span>
+            <span style={{fontSize:12,color:"var(--text3)"}}>{rows.length} pedido{rows.length>1?"s":""} — {fmtUSD(rows.reduce((s,r)=>s+(r.valor_usd||0),0))}</span>
+          </div>
+        </div>
+        <div className="tw">
+          <table className="cart-table">
+            <thead><tr>
+              <th>Invoice</th><th>Cliente</th><th>PO#</th><th style={{textAlign:"right"}}>Valor USD</th>
+              <th>Embarque</th><th>Pgto Previsto</th><th>Dias</th><th>Ação</th>
+            </tr></thead>
+            <tbody>{rows.map(r=>(
+              <tr key={r.invoice}>
+                <td><strong style={{color:"var(--blue)"}}>{r.invoice}</strong></td>
+                <td>{r.cliente||"—"}</td>
+                <td>{fmtInt(r.po)}</td>
+                <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:500}}>{fmtUSD(r.valor_usd)}</td>
+                <td>{fmtDate(r.estufagem)}</td>
+                <td>{r._prev?fmtDate(r._prev):"—"}</td>
+                <td style={{fontWeight:600,color:r._diasAte!==null?(r._diasAte<0?"#059669":"#991B1B"):"var(--text3)"}}>
+                  {r._diasAte!==null?(r._diasAte<=0?`${Math.abs(r._diasAte)}d`:`+${r._diasAte}d`):"—"}
+                </td>
+                <td>
+                  <button className="btn bgx" style={{fontSize:11,padding:"3px 10px"}} onClick={()=>markPaid(r)} title="Marcar como recebido">✓ Recebido</button>
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>;
+    })}
+
+    {/* Análise — Recebidos recentes + Prazo médio */}
+    {(recebidos.length>0||prazoMedio.length>0) && <div className="g2" style={{marginTop:16}}>
+      {/* Prazo médio por cliente */}
+      {prazoMedio.length>0 && <div className="card">
+        <div className="ct">Prazo Médio de Recebimento por Cliente</div>
+        <div style={{marginTop:10}}>
+          {prazoMedio.map(p=>(
+            <div key={p.cli} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <div style={{width:90,fontSize:12,fontWeight:500,color:"var(--text)"}}>{p.cli}</div>
+              <div style={{flex:1,height:6,background:"#EEF2F6",borderRadius:3,overflow:"hidden"}}>
+                <div style={{width:`${Math.min(Math.abs(p.avg)/60*100,100)}%`,height:"100%",background:p.avg>0?"#DC2626":"#059669",borderRadius:3}}/>
+              </div>
+              <div style={{fontSize:12,fontWeight:600,color:p.avg>0?"#DC2626":"#059669",minWidth:60,textAlign:"right"}}>
+                {p.avg>0?`+${p.avg}d atraso`:`${Math.abs(p.avg)}d antecipado`}
+              </div>
+              <div style={{fontSize:10,color:"var(--text3)"}}>{p.cnt} pgtos</div>
+            </div>
+          ))}
+        </div>
+      </div>}
+
+      {/* Últimos recebimentos */}
+      {recebidos.length>0 && <div className="card">
+        <div className="ct">Últimos Recebimentos (90 dias)</div>
+        <div className="tw" style={{marginTop:10}}>
+          <table className="cart-table">
+            <thead><tr><th>Invoice</th><th>Cliente</th><th style={{textAlign:"right"}}>Valor</th><th>Pago em</th><th>Δ Dias</th>
+              <th>Ação</th>
+            </tr></thead>
+            <tbody>{recebidos.slice(0,15).map(r=>(
+              <tr key={r.invoice}>
+                <td><strong>{r.invoice}</strong></td>
+                <td>{r.cliente||"—"}</td>
+                <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{fmtUSD(r.valor_usd)}</td>
+                <td>{fmtDate(r.data_pagamento)}</td>
+                <td style={{fontWeight:600,color:r._diff!==null?(r._diff>0?"#DC2626":"#059669"):"var(--text3)"}}>
+                  {r._diff!==null?(r._diff>0?`+${r._diff}d`:`${r._diff}d`):"—"}
+                </td>
+                <td>
+                  <button className="btn" style={{fontSize:10,padding:"2px 8px",background:"#FEF3C7",color:"#92400E",border:"1px solid #FDE68A"}} onClick={()=>undoPaid(r)} title="Desfazer recebimento">↩ Desfazer</button>
+                </td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>}
+    </div>}
+
+    {/* Mensagem quando não há pendentes */}
+    {cntPendente===0 && <div className="card" style={{textAlign:"center",padding:"40px 20px",color:"var(--text3)"}}>
+      <div style={{fontSize:32,marginBottom:8}}>✓</div>
+      <div style={{fontSize:14}}>Nenhum recebimento pendente</div>
+      <div style={{fontSize:12,marginTop:4}}>Todos os pedidos faturados foram recebidos</div>
+    </div>}
   </div>;
 }
 
