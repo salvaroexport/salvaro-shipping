@@ -1482,10 +1482,10 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
     return m;
   },[pendentes]);
 
-  /* Prazo médio por cliente */
+  /* Prazo médio por cliente — apenas pedidos 2026+ */
   const prazoMedio = useMemo(()=>{
     const m = {};
-    recebidos.forEach(r=>{
+    recebidos.filter(r=>r.data_pagamento>="2026-01-01").forEach(r=>{
       if(r._diff!==null){
         if(!m[r.cliente]) m[r.cliente]={sum:0,cnt:0};
         m[r.cliente].sum+=r._diff; m[r.cliente].cnt++;
