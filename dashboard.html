@@ -1459,15 +1459,14 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
     }).sort((a,b)=>(a._diasAte||999)-(b._diasAte||999));
   },[allRecs]);
 
-  /* Recebidos recentes (últimos 30 dias) para análise */
+  /* Recebidos de 2026 para análise */
   const recebidos = useMemo(()=>{
-    const corte = new Date(); corte.setDate(corte.getDate()-90);
-    return allRecs.filter(r=>!r._hist && r.data_pagamento).map(r=>{
+    return allRecs.filter(r=>!r._hist && r.data_pagamento && r.data_pagamento>="2026-01-01").map(r=>{
       const prev = calcPgtoPrevisto(r);
       const real = r.data_pagamento;
       const diff = prev && real ? Math.round((new Date(real+"T00:00:00")-new Date(prev+"T00:00:00"))/(1000*60*60*24)) : null;
       return {...r, _prev:prev, _diff:diff};
-    }).filter(r=>new Date(r.data_pagamento+"T00:00:00")>=corte);
+    });
   },[allRecs]);
 
   /* KPIs */
@@ -1590,7 +1589,7 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
 
       {/* Últimos recebimentos */}
       {recebidos.length>0 && <div className="card">
-        <div className="ct">Últimos Recebimentos (90 dias)</div>
+        <div className="ct">Recebimentos 2026</div>
         <div className="tw" style={{marginTop:10}}>
           <table className="cart-table">
             <thead><tr><th>Invoice</th><th>Cliente</th><th style={{textAlign:"right"}}>Valor</th><th>Pago em</th><th>Δ Dias</th>
