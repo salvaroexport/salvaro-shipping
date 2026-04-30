@@ -1433,8 +1433,7 @@ function catRecebimento(r) {
   if(s==="EMBARCADO"||s==="ENTREGUE") return "EMBARCADO";
   if(s==="NO PORTO") return "PORTO";
   if(s==="AGD ESTUFAGEM") return "EM CASA PRONTO";
-  if(s==="EM PRODUÇÃO") return "FATURADOS NÃO PRONTOS";
-  return null; /* CARTEIRA ou vazio = não faturado, não aparece */
+  return "FATURADOS NÃO PRONTOS"; /* EM PRODUÇÃO, CARTEIRA, vazio — tem NF = faturado */
 }
 
 const CAT_COLORS = {
@@ -1457,7 +1456,7 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
       const diasAte = prevDate ? Math.round((prevDate - hoje)/(1000*60*60*24)) : null;
       const atrasado = prevDate && prevDate < hoje;
       return {...r, _prev:prev, _cat:atrasado?"ATRASADO":cat, _diasAte:diasAte};
-    }).filter(Boolean).sort((a,b)=>(a._diasAte||999)-(b._diasAte||999));
+    }).sort((a,b)=>(a._diasAte||999)-(b._diasAte||999));
   },[allRecs]);
 
   /* Recebidos de 2026 para análise */
