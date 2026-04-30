@@ -674,6 +674,7 @@ const IC = {
   ops:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="12" y2="16"/></svg>,
   cart: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 001.99 1.61h9.72a2 2 0 001.99-1.61L23 6H6"/></svg>,
   rec:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>,
+  ship: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.5 0 2.5 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M19.38 20A11.6 11.6 0 0021 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76"/><path d="M19 13V7a2 2 0 00-2-2H7a2 2 0 00-2 2v6"/><line x1="12" y1="1" x2="12" y2="4"/></svg>,
   db:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>,
   rep:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
 };
@@ -879,6 +880,7 @@ function App() {
     {id:"dash",ic:IC.dash,lb:"Dashboard"},
     {id:"ops", ic:IC.ops, lb:"Operacional"},
     {id:"cart",ic:IC.cart,lb:"Carteira"},
+    {id:"ship",ic:IC.ship,lb:"Shipping"},
     {id:"rec", ic:IC.rec, lb:"Recebimentos"},
     {id:"base",ic:IC.db,  lb:"Base de Dados"},
     {id:"rel", ic:IC.rep, lb:"Relatórios"},
@@ -922,6 +924,7 @@ function App() {
               {pg==="dash" && <PgDash recs={recs} yr={dashYr} setYr={setDashYr}/>}
               {pg==="ops"  && <PgOps  recs={recs} ant={opsAnt} setAnt={setOpsAnt} vig={opsVig} setVig={setOpsVig} seg={opsSeg} setSeg={setOpsSeg}/>}
               {pg==="cart" && <PgCart recs={recs} m1={cartM1} m2={cartM2} m3={cartM3}/>}
+              {pg==="ship" && <PgShip recs={recs}/>}
               {pg==="rec"  && <PgRec  recs={recs} onSave={save} refresh={refresh} notify={notify}/>}
               {pg==="base" && <PgBase recs={recs} onSave={save} onDel={remove} notify={notify} q={baseQ} setQ={setBaseQ} fC={baseFC} setFC={setBaseFC} fM={baseFM} setFM={setBaseFM} fD={baseFD} setFD={setBaseFD}/>}
               {pg==="rel"  && <PgRel  recs={recs} tab={relTab} setTab={setRelTab} yr={relYr} setYr={setRelYr} mes={relMes} setMes={setRelMes}/>}
@@ -1400,6 +1403,130 @@ function PgCart({recs, m1, m2, m3}) {
     {/* Cards dos 3 meses — colapsáveis */}
     <div style={{display:"flex",flexDirection:"column",gap:12}}>
       {months.map((m,i)=> <MesCard key={i} m={m} idx={i}/> )}
+    </div>
+  </div>;
+}
+
+/* ══════════════════════════════════════════
+   SHIPPING REPORT — Controle de embarques
+══════════════════════════════════════════ */
+const SHIP_STATUS_MAP = {"EMBARCADO":"ON BOARD","AGD ESTUFAGEM":"READY TO LOAD","NO PORTO":"AT PORT","EM PRODUÇÃO":"PENDING","CARTEIRA":"PENDING"};
+const SHIP_STATUS_COLORS = {
+  "ON BOARD":     {bg:"#DBEAFE",color:"#1E40AF",border:"#BFDBFE",icon:"🚢"},
+  "READY TO LOAD":{bg:"#FEF3C7",color:"#92400E",border:"#FDE68A",icon:"📦"},
+  "AT PORT":      {bg:"#D1FAE5",color:"#065F46",border:"#A7F3D0",icon:"⚓"},
+  "PENDING":      {bg:"#F3F4F6",color:"#6B7280",border:"#E5E7EB",icon:"⏳"},
+};
+
+function PgShip({recs:allRecs}) {
+  const [fCli,setFCli]=useState("");
+  const [fSt,setFSt]=useState("");
+
+  /* Apenas registros live com PO, exceto ENTREGUE */
+  const shipRecs = useMemo(()=>{
+    return allRecs.filter(r=>!r._hist && r.po && r.status!=="ENTREGUE").map(r=>{
+      const shipSt = SHIP_STATUS_MAP[r.status] || (r.status ? "ON BOARD" : "PENDING");
+      return {...r, _shipSt:shipSt};
+    }).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
+  },[allRecs]);
+
+  /* Filtros */
+  const clientes = useMemo(()=>[...new Set(shipRecs.map(r=>r.cliente).filter(Boolean))].sort(),[shipRecs]);
+  const filtered = useMemo(()=>{
+    return shipRecs.filter(r=>{
+      if(fCli && r.cliente!==fCli) return false;
+      if(fSt && r._shipSt!==fSt) return false;
+      return true;
+    });
+  },[shipRecs,fCli,fSt]);
+
+  /* KPIs por status */
+  const kpis = useMemo(()=>{
+    const m = {"ON BOARD":0,"READY TO LOAD":0,"AT PORT":0,"PENDING":0};
+    shipRecs.forEach(r=>{ m[r._shipSt]=(m[r._shipSt]||0)+1; });
+    return m;
+  },[shipRecs]);
+
+  /* Progress bar */
+  const ShipProgress = ({r}) => {
+    const steps = ["PENDING","READY TO LOAD","AT PORT","ON BOARD"];
+    const idx = steps.indexOf(r._shipSt);
+    const pct = idx < 0 ? 0 : ((idx+1)/steps.length)*100;
+    const sc = SHIP_STATUS_COLORS[r._shipSt]||SHIP_STATUS_COLORS.PENDING;
+    return <div style={{display:"flex",alignItems:"center",gap:6,minWidth:100}}>
+      <div style={{flex:1,height:5,background:"#EEF2F6",borderRadius:3,overflow:"hidden"}}>
+        <div style={{width:`${pct}%`,height:"100%",background:sc.color,borderRadius:3,transition:"width .4s"}}/>
+      </div>
+      <span style={{fontSize:10,color:sc.color,fontWeight:600}}>{Math.round(pct)}%</span>
+    </div>;
+  };
+
+  return <div className="page">
+    <div className="ph">
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div><h2>Shipping Report</h2><p>Controle de embarques — atualização semanal para clientes</p></div>
+        <div style={{fontSize:12,color:"var(--text3)"}}>
+          {filtered.length} pedido{filtered.length!==1?"s":""} no pipeline
+        </div>
+      </div>
+    </div>
+
+    {/* KPIs */}
+    <div className="kpi-grid4" style={{marginBottom:16}}>
+      <div className="kp hi"><div className="kl">Total Pipeline</div><div className="kv tc" style={{fontSize:22}}>{shipRecs.length}</div><div className="ks">pedidos ativos</div></div>
+      {Object.entries(SHIP_STATUS_COLORS).map(([st,sc])=>(
+        <div key={st} className="kp" style={{borderLeft:`3px solid ${sc.border}`}}>
+          <div className="kl">{sc.icon} {st}</div>
+          <div className="kv" style={{fontSize:20}}>{kpis[st]||0}</div>
+          <div className="ks">{st==="ON BOARD"?"Em trânsito":st==="READY TO LOAD"?"Aguardando embarque":st==="AT PORT"?"No porto":"Sem navio"}</div>
+        </div>
+      ))}
+    </div>
+
+    {/* Filtros */}
+    <div className="card mb20">
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}>
+        <select className="sel" value={fCli} onChange={e=>setFCli(e.target.value)} style={{minWidth:150}}>
+          <option value="">Todos os clientes</option>
+          {clientes.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <select className="sel" value={fSt} onChange={e=>setFSt(e.target.value)} style={{minWidth:150}}>
+          <option value="">Todos os status</option>
+          {Object.keys(SHIP_STATUS_COLORS).map(s=><option key={s}>{s}</option>)}
+        </select>
+        {(fCli||fSt) && <button className="btn bsm" style={{fontSize:11}} onClick={()=>{setFCli("");setFSt("");}}>✕ Limpar</button>}
+      </div>
+    </div>
+
+    {/* Tabela */}
+    <div className="card">
+      <div className="tw">
+        <table className="cart-table">
+          <thead><tr>
+            <th>Cliente</th><th>Invoice</th><th>PO#</th><th>Navio</th>
+            <th>ETD</th><th>ETA</th><th>Container</th><th>BL</th>
+            <th>Status</th><th>Progresso</th>
+          </tr></thead>
+          <tbody>{filtered.length===0
+            ?<tr><td colSpan={10} className="empty">Nenhum embarque encontrado</td></tr>
+            :filtered.map(r=>{
+              const sc = SHIP_STATUS_COLORS[r._shipSt]||SHIP_STATUS_COLORS.PENDING;
+              return <tr key={r.invoice}>
+                <td style={{fontWeight:500}}>{r.cliente||"—"}</td>
+                <td><strong style={{color:"var(--blue)"}}>{r.invoice}</strong></td>
+                <td>{fmtInt(r.po)}</td>
+                <td>{r.navio||"—"}</td>
+                <td>{fmtDate(r.etd)}</td>
+                <td>{fmtDate(r.eta)}</td>
+                <td>{r.container||"—"}</td>
+                <td>{fmtDate(r.bl)}</td>
+                <td><span style={{background:sc.bg,color:sc.color,border:`1px solid ${sc.border}`,padding:"3px 8px",borderRadius:10,fontSize:10,fontWeight:600,whiteSpace:"nowrap"}}>{r._shipSt}</span></td>
+                <td><ShipProgress r={r}/></td>
+              </tr>;
+            })
+          }</tbody>
+        </table>
+      </div>
     </div>
   </div>;
 }
