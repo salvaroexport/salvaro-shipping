@@ -1428,7 +1428,7 @@ const SHIP_STATUS_COLORS = {
 const SHIP_XL_STATUS = {
   "ON BOARD":      {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"1A5E38"}},fill:{fgColor:{rgb:"D6F4E3"}},alignment:{horizontal:"center",vertical:"center"}},
   "READY TO LOAD": {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"7A5100"}},fill:{fgColor:{rgb:"FFF3CD"}},alignment:{horizontal:"center",vertical:"center"}},
-  "AT PORT":       {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"065F46"}},fill:{fgColor:{rgb:"D1FAE5"}},alignment:{horizontal:"center",vertical:"center"}},
+  "AT PORT":       {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"1E40AF"}},fill:{fgColor:{rgb:"DBEAFE"}},alignment:{horizontal:"center",vertical:"center"}},
   "PENDING":       {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"505A72"}},fill:{fgColor:{rgb:"ECEEF3"}},alignment:{horizontal:"center",vertical:"center"}},
 };
 
@@ -1714,6 +1714,116 @@ const CAT_COLORS = {
   "PORTO":                {bg:"#FFEDD5",color:"#9A3412",border:"#FED7AA"},
 };
 
+/* Cores de categoria para Excel Recebimentos */
+const REC_XL_CAT = {
+  "EMBARCADO":             {rgb:"92D050"},
+  "ATRASADO":              {rgb:"FF0000"},
+  "FATURADOS NÃO PRONTOS": {rgb:"FFFF00"},
+  "EM CASA PRONTO":        {rgb:"00B0F0"},
+  "PORTO":                 {rgb:"FFC000"},
+};
+
+function fmtDateBR(d) {
+  if(!d) return "";
+  const dt = new Date(d+"T00:00:00");
+  if(isNaN(dt)) return "";
+  return String(dt.getDate()).padStart(2,"0")+"/"+String(dt.getMonth()+1).padStart(2,"0")+"/"+dt.getFullYear();
+}
+
+function exportRecXLS(pendentes, cats) {
+  const today = new Date();
+  const aoa = [];
+
+  /* Row 0: spacer */
+  aoa.push([""]);
+  /* Row 1: date in H (col index 7) */
+  aoa.push(["","","","","","","",fmtDateBR(today.toISOString().slice(0,10))]);
+  /* Row 2: headers */
+  aoa.push(["","CLIENTE","NOTA","PEDIDO","EMISSÃO","VALOR","EMBARQUE","PAGAMENTO",""]);
+
+  /* Data rows */
+  pendentes.forEach(r => {
+    aoa.push([
+      "",
+      r.cliente||"",
+      fmtInt(r.nf),
+      r.invoice||"",
+      fmtDateBR(r.estufagem),
+      r.valor_usd||0,
+      fmtDateBR(r.etd || r.estufagem),
+      fmtDateBR(r._prev),
+      r._diasAte!==null ? r._diasAte : ""
+    ]);
+  });
+
+  /* Total row */
+  const totalRow = aoa.length;
+  const totalUSD = pendentes.reduce((s,r)=>s+(r.valor_usd||0),0);
+  aoa.push(["","","","","",totalUSD,"",pendentes.length,""]);
+  aoa.push([""]); /* spacer */
+
+  /* Category summary */
+  const catOrder = ["EMBARCADO","ATRASADO","FATURADOS NÃO PRONTOS","EM CASA PRONTO","PORTO"];
+  const catStartRow = aoa.length;
+  catOrder.forEach(cat => {
+    const c = cats[cat] || {cnt:0,val:0};
+    aoa.push(["",cat,c.cnt,c.val]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  /* ── STYLES ── */
+  const dataFont = {name:"Calibri",sz:11};
+  const centerAlign = {horizontal:"center",vertical:"center"};
+  const dataCenter = {font:dataFont,alignment:centerAlign};
+
+  /* Row 1: date */
+  applyStyle(ws, XLSX.utils.encode_cell({r:1,c:7}), {font:{name:"Calibri",sz:11},alignment:{horizontal:"right"}});
+
+  /* Row 2: headers */
+  for(let c=1;c<=8;c++) applyStyle(ws, XLSX.utils.encode_cell({r:2,c}), {font:{name:"Calibri",sz:12,bold:true},alignment:centerAlign});
+
+  /* Data rows */
+  for(let r=3;r<3+pendentes.length;r++){
+    const rec = pendentes[r-3];
+    for(let c=1;c<=8;c++){
+      let style = {font:dataFont,alignment:centerAlign};
+      /* Col 6 (EMBARQUE) - color by category */
+      if(c===6){
+        const catColor = REC_XL_CAT[rec._cat];
+        if(catColor) style = {font:dataFont,alignment:centerAlign,fill:{fgColor:{rgb:catColor.rgb}}};
+      }
+      applyStyle(ws, XLSX.utils.encode_cell({r,c}), style);
+    }
+  }
+
+  /* Total row */
+  applyStyle(ws, XLSX.utils.encode_cell({r:totalRow,c:5}), {font:{name:"Calibri",sz:11}});
+  applyStyle(ws, XLSX.utils.encode_cell({r:totalRow,c:7}), {font:{name:"Calibri",sz:11,bold:true},alignment:centerAlign});
+
+  /* Category summary */
+  catOrder.forEach((cat,i) => {
+    const row = catStartRow + i;
+    const catColor = REC_XL_CAT[cat];
+    applyStyle(ws, XLSX.utils.encode_cell({r:row,c:1}), {font:{name:"Calibri",sz:11},fill:{fgColor:{rgb:catColor?.rgb||"FFFFFF"}},alignment:centerAlign});
+    applyStyle(ws, XLSX.utils.encode_cell({r:row,c:2}), {font:{name:"Calibri",sz:11},alignment:centerAlign});
+    applyStyle(ws, XLSX.utils.encode_cell({r:row,c:3}), {font:{name:"Calibri",sz:11}});
+  });
+
+  /* Column widths matching reference */
+  ws["!cols"] = [
+    {wch:8.7},{wch:26.6},{wch:9.9},{wch:14},{wch:10.7},{wch:14.4},{wch:12.6},{wch:15.1},{wch:8.7}
+  ];
+
+  ws["!pageSetup"] = {orientation:"landscape",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
+  ws["!printOptions"] = {gridLines:false};
+  ws["!margins"] = {left:0.4,right:0.4,top:0.5,bottom:0.4};
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Plan1");
+  XLSX.writeFile(wb, `TABELA_RECEBIMENTO_${fmtDateBR(today.toISOString().slice(0,10)).replace(/\//g,"-")}.xlsx`);
+}
+
 function PgRec({recs:allRecs, onSave, refresh, notify}) {
   /* Apenas registros live de 2026 que têm NF (faturados) e não foram recebidos */
   const pendentes = useMemo(()=>{
@@ -1782,8 +1892,13 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
 
   return <div className="page">
     <div className="ph">
-      <h2>Recebimentos</h2>
-      <p>Controle de pagamentos pendentes — pedidos faturados</p>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div><h2>Recebimentos</h2><p>Controle de pagamentos pendentes — pedidos faturados</p></div>
+        {cntPendente>0 && <button className="btn bgx bsm" onClick={()=>exportRecXLS(pendentes, cats)}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Exportar Excel
+        </button>}
+      </div>
     </div>
 
     {/* KPIs */}
