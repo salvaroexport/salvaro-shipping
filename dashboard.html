@@ -847,7 +847,13 @@ function App() {
   }
 
   async function save(rec) {
-    const {error}=await db.from("exportacoes").upsert(rec,{onConflict:"invoice"});
+    /* Limpar strings vazias em campos de data — PostgreSQL exige null, não "" */
+    const DATE_FIELDS = ["isf_docs","bl","dl_carga","estufagem","eta_pedido","etd","eta","data_pagamento"];
+    const clean = {...rec};
+    DATE_FIELDS.forEach(f=>{ if(clean[f]==="") clean[f]=null; });
+    /* Limpar campos numéricos vazios */
+    ["valor_usd","frete_usd"].forEach(f=>{ if(clean[f]==="") clean[f]=null; });
+    const {error}=await db.from("exportacoes").upsert(clean,{onConflict:"invoice"});
     if(error){notify("Erro ao salvar: "+error.message,"err");return false;}
     await refresh(); notify("Salvo com sucesso!"); return true;
   }
@@ -1418,6 +1424,136 @@ const SHIP_STATUS_COLORS = {
   "PENDING":      {bg:"#F3F4F6",color:"#6B7280",border:"#E5E7EB",icon:"⏳"},
 };
 
+/* Status badge styles for Excel */
+const SHIP_XL_STATUS = {
+  "ON BOARD":      {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"1A5E38"}},fill:{fgColor:{rgb:"D6F4E3"}},alignment:{horizontal:"center",vertical:"center"}},
+  "READY TO LOAD": {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"7A5100"}},fill:{fgColor:{rgb:"FFF3CD"}},alignment:{horizontal:"center",vertical:"center"}},
+  "AT PORT":       {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"065F46"}},fill:{fgColor:{rgb:"D1FAE5"}},alignment:{horizontal:"center",vertical:"center"}},
+  "PENDING":       {font:{name:"Calibri",sz:9,bold:true,color:{rgb:"505A72"}},fill:{fgColor:{rgb:"ECEEF3"}},alignment:{horizontal:"center",vertical:"center"}},
+};
+
+function fmtDateUS(d) {
+  if(!d) return "";
+  const dt = new Date(d+"T00:00:00");
+  if(isNaN(dt)) return "";
+  return String(dt.getMonth()+1).padStart(2,"0")+"/"+String(dt.getDate()).padStart(2,"0")+"/"+dt.getFullYear();
+}
+
+function exportShipXLS(cliente, rows) {
+  const now = new Date();
+  const weekNum = Math.ceil(((now - new Date(now.getFullYear(),0,1))/86400000 + new Date(now.getFullYear(),0,1).getDay()+1)/7);
+  const fileName = `WEEKLY_SHIPPING_REPORT_-_${cliente}_W${weekNum}_${now.getFullYear()}.xlsx`;
+
+  const aoa = [];
+  const COLS = 9; /* B-J mapped to 0-8 in aoa, col A is spacer */
+
+  /* Row 0 (spacer) */
+  aoa.push(["",""]);
+  /* Row 1: SALVARO INDUSTRIAL */
+  aoa.push(["","SALVARO INDUSTRIAL","","","","","","","",""]);
+  /* Row 2: Weekly Shipping Report */
+  aoa.push(["","Weekly Shipping Report","","","","","","","",""]);
+  /* Row 3 (spacer) */
+  aoa.push(["",""]);
+  /* Row 4: Client name */
+  aoa.push(["",cliente,"","","","","","","",""]);
+  /* Row 5: Headers */
+  aoa.push(["","INVOICE","PO #","VESSEL","ETD","ETA","CONTAINER","BL #","STATUS",""]);
+
+  /* Data rows */
+  rows.forEach(r => {
+    aoa.push([
+      "",
+      r.invoice||"",
+      fmtInt(r.po),
+      r.navio||"",
+      fmtDateUS(r.etd),
+      fmtDateUS(r.eta),
+      r.container||"",
+      r.bl ? fmtDateUS(r.bl) : "",
+      r._shipSt||"PENDING",
+      ""
+    ]);
+  });
+
+  /* Spacer + footer */
+  aoa.push(["",""]);
+  const footerRow = aoa.length;
+  aoa.push(["",`Salvaro Industrial  ·  Weekly Shipping Report  ·  W${weekNum} ${now.getFullYear()}  ·  Confidential`,"","","","","","","",""]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  /* ── STYLES ── */
+  const darkBg  = {fgColor:{rgb:"0D1C3F"}};
+  const whiteFc = {name:"Calibri",sz:10,color:{rgb:"FFFFFF"}};
+  const dataFc  = {name:"Calibri",sz:10,color:{rgb:"1A1A2E"}};
+  const rowWhite = {font:dataFc, alignment:{vertical:"center"}, fill:{fgColor:{rgb:"FFFFFF"}}};
+  const rowZebra = {font:dataFc, alignment:{vertical:"center"}, fill:{fgColor:{rgb:"F4F6FA"}}};
+  const centStyle = (base) => ({...base, alignment:{...base.alignment, horizontal:"center"}});
+  const leftStyle = (base) => ({...base, alignment:{...base.alignment, horizontal:"left"}});
+
+  /* Row 1: title */
+  for(let c=0;c<=9;c++) applyStyle(ws, XLSX.utils.encode_cell({r:1,c}), {font:{name:"Calibri",sz:16,bold:true,color:{rgb:"0D1C3F"}},alignment:{horizontal:"left",vertical:"center"}});
+  /* Row 2: subtitle */
+  for(let c=0;c<=9;c++) applyStyle(ws, XLSX.utils.encode_cell({r:2,c}), {font:{name:"Calibri",sz:10,color:{rgb:"5B9E3A"}},alignment:{horizontal:"left",vertical:"center"}});
+  /* Row 4: client name */
+  for(let c=0;c<=9;c++) applyStyle(ws, XLSX.utils.encode_cell({r:4,c}), {font:{name:"Calibri",sz:14,bold:true,color:{rgb:"FFFFFF"}},fill:darkBg,alignment:{horizontal:"left",vertical:"center"}});
+  /* Row 5: headers */
+  for(let c=0;c<=9;c++) applyStyle(ws, XLSX.utils.encode_cell({r:5,c}), {font:{name:"Calibri",sz:10,bold:true,color:{rgb:"FFFFFF"}},fill:darkBg,alignment:{horizontal:"center",vertical:"center"}});
+
+  /* Data rows */
+  for(let r=6;r<6+rows.length;r++){
+    const isZebra = (r-6)%2===1;
+    const base = isZebra ? rowZebra : rowWhite;
+    for(let c=0;c<=9;c++){
+      /* Column alignment: B=center, C-D=left, E-F=center, G-H=left, I=status, J=left */
+      let style;
+      if(c===1) style = centStyle(base);       /* INVOICE */
+      else if(c===4||c===5) style = centStyle(base); /* ETD, ETA */
+      else if(c===8) {
+        /* STATUS badge */
+        const statusVal = ws[XLSX.utils.encode_cell({r,c})]?.v || "PENDING";
+        style = SHIP_XL_STATUS[statusVal] || SHIP_XL_STATUS.PENDING;
+      }
+      else style = leftStyle(base);
+      applyStyle(ws, XLSX.utils.encode_cell({r,c}), style);
+    }
+  }
+
+  /* Footer */
+  for(let c=0;c<=9;c++) applyStyle(ws, XLSX.utils.encode_cell({r:footerRow,c}), {font:{name:"Calibri",sz:9,color:{rgb:"8891A8"}},fill:{fgColor:{rgb:"F0F2F6"}},alignment:{horizontal:"right",vertical:"center"}});
+
+  /* Merges */
+  ws["!merges"] = [
+    {s:{r:1,c:1},e:{r:1,c:9}},  /* Title */
+    {s:{r:2,c:1},e:{r:2,c:9}},  /* Subtitle */
+    {s:{r:4,c:1},e:{r:4,c:9}},  /* Client */
+    {s:{r:footerRow,c:1},e:{r:footerRow,c:9}}, /* Footer */
+  ];
+
+  /* Column widths matching reference */
+  ws["!cols"] = [
+    {wch:2.8},{wch:14.8},{wch:16.8},{wch:26.8},{wch:13.8},{wch:13.8},{wch:18.8},{wch:18.8},{wch:18.8},{wch:30.8}
+  ];
+
+  /* Row heights */
+  ws["!rows"] = [
+    {hpx:8},{hpx:26},{hpx:18},{hpx:8},{hpx:26},{hpx:22},
+  ];
+  for(let r=6;r<6+rows.length;r++) { if(!ws["!rows"][r]) ws["!rows"][r]={}; ws["!rows"][r].hpx=18; }
+  ws["!rows"][6+rows.length] = {hpx:8};
+  ws["!rows"][footerRow] = {hpx:16};
+
+  /* Page setup */
+  ws["!pageSetup"] = {orientation:"landscape",paperSize:9,fitToWidth:1,fitToHeight:0,fitToPage:true};
+  ws["!printOptions"] = {gridLines:false};
+  ws["!margins"] = {left:0.4,right:0.4,top:0.5,bottom:0.4,header:0.2,footer:0.2};
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Plan1");
+  XLSX.writeFile(wb, fileName);
+}
+
 function PgShip({recs:allRecs}) {
   const [fCli,setFCli]=useState("");
   const [fSt,setFSt]=useState("");
@@ -1465,8 +1601,15 @@ function PgShip({recs:allRecs}) {
     <div className="ph">
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
         <div><h2>Shipping Report</h2><p>Controle de embarques — atualização semanal para clientes</p></div>
-        <div style={{fontSize:12,color:"var(--text3)"}}>
-          {filtered.length} pedido{filtered.length!==1?"s":""} no pipeline
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <select className="sel" value={fCli} onChange={e=>setFCli(e.target.value)} style={{minWidth:140,fontSize:12}}>
+            <option value="">Todos</option>
+            {clientes.map(c=><option key={c}>{c}</option>)}
+          </select>
+          {fCli && <button className="btn bgx bsm" onClick={()=>exportShipXLS(fCli, shipRecs.filter(r=>r.cliente===fCli))}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export {fCli}
+          </button>}
         </div>
       </div>
     </div>
