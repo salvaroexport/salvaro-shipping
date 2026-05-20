@@ -675,6 +675,7 @@ const IC = {
   cart: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 001.99 1.61h9.72a2 2 0 001.99-1.61L23 6H6"/></svg>,
   rec:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>,
   ship: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.5 0 2.5 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M19.38 20A11.6 11.6 0 0021 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76"/><path d="M19 13V7a2 2 0 00-2-2H7a2 2 0 00-2 2v6"/><line x1="12" y1="1" x2="12" y2="4"/></svg>,
+  cad:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
   db:   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>,
   rep:  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>,
 };
@@ -825,6 +826,25 @@ function App() {
     await fetchData();
   }
 
+  /* ── Cadastros dinâmicos ── */
+  const [cadData,setCadData]=useState({clientes:[],destinos:[],portos:[],transportadoras:[]});
+
+  async function loadCadastros() {
+    const tables = ["cadastro_clientes","cadastro_destinos","cadastro_portos","cadastro_transportadoras"];
+    const keys = ["clientes","destinos","portos","transportadoras"];
+    const result = {};
+    for(let i=0;i<tables.length;i++){
+      const {data}=await db.from(tables[i]).select("*").order("nome");
+      result[keys[i]] = (data||[]).map(r=>r.nome);
+    }
+    setCadData(result);
+  }
+
+  /* Carregar cadastros junto com os dados */
+  useEffect(()=>{
+    if(session) loadCadastros();
+  },[session]);
+
   async function fetchData() {
     const {data,error}=await db.from("exportacoes").select("*").order("invoice");
     if(error) {
@@ -889,6 +909,7 @@ function App() {
     {id:"ship",ic:IC.ship,lb:"Shipping"},
     {id:"rec", ic:IC.rec, lb:"Recebimentos"},
     {id:"base",ic:IC.db,  lb:"Base de Dados"},
+    {id:"cad", ic:IC.cad, lb:"Cadastros"},
     {id:"rel", ic:IC.rep, lb:"Relatórios"},
   ];
 
@@ -932,7 +953,8 @@ function App() {
               {pg==="cart" && <PgCart recs={recs} m1={cartM1} m2={cartM2} m3={cartM3}/>}
               {pg==="ship" && <PgShip recs={recs}/>}
               {pg==="rec"  && <PgRec  recs={recs} onSave={save} refresh={refresh} notify={notify}/>}
-              {pg==="base" && <PgBase recs={recs} onSave={save} onDel={remove} notify={notify} q={baseQ} setQ={setBaseQ} fC={baseFC} setFC={setBaseFC} fM={baseFM} setFM={setBaseFM} fD={baseFD} setFD={setBaseFD}/>}
+              {pg==="base" && <PgBase recs={recs} onSave={save} onDel={remove} notify={notify} q={baseQ} setQ={setBaseQ} fC={baseFC} setFC={setBaseFC} fM={baseFM} setFM={setBaseFM} fD={baseFD} setFD={setBaseFD} cadData={cadData}/>}
+              {pg==="cad"  && <PgCad  cadData={cadData} refreshCad={loadCadastros} notify={notify}/>}
               {pg==="rel"  && <PgRel  recs={recs} tab={relTab} setTab={setRelTab} yr={relYr} setYr={setRelYr} mes={relMes} setMes={setRelMes}/>}
             </>
         }
@@ -2021,7 +2043,7 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
 /* ══════════════════════════════════════════
    BASE DE DADOS
 ══════════════════════════════════════════ */
-function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, fD,setFD}) {
+function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, fD,setFD, cadData}) {
   /* Base de dados editável só mostra registros ao vivo (não-históricos) */
   const recs = useMemo(()=>allRecs.filter(r=>!r._hist),[allRecs]);
   const [modal,setModal]=useState(null); const [del,setDel]=useState(null); const [saving,setSaving]=useState(false);
@@ -2120,10 +2142,10 @@ function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, f
         <div className="mh"><h3>{modal==="new"?"Novo Embarque":"Editar — INV "+modal.invoice}</h3><button className="btn bg2 bsm" onClick={()=>setModal(null)}>✕</button></div>
         <div className="mb2">
           <div className="st">Identificação</div>
-          <div className="fr mb16"><Field label="Invoice *" field="invoice" type="number" form={form} upd={upd}/><Field label="Mês Ref *" field="mes_ref" opts={ALL_MONTHS} form={form} upd={upd}/><Field label="Cliente" field="cliente" opts={CLIENTES} form={form} upd={upd}/><Field label="PO#" field="po" form={form} upd={upd}/><Field label="NF" field="nf" form={form} upd={upd}/></div>
+          <div className="fr mb16"><Field label="Invoice *" field="invoice" type="number" form={form} upd={upd}/><Field label="Mês Ref *" field="mes_ref" opts={ALL_MONTHS} form={form} upd={upd}/><Field label="Cliente" field="cliente" opts={cadData?.clientes?.length?cadData.clientes:CLIENTES} form={form} upd={upd}/><Field label="PO#" field="po" form={form} upd={upd}/><Field label="NF" field="nf" form={form} upd={upd}/></div>
           <hr className="dv"/>
           <div className="st">Logística</div>
-          <div className="fr mb16"><Field label="Porto de Carga" field="porto_carga" opts={PORTOS} form={form} upd={upd}/><Field label="Destino" field="destino" opts={DESTINOS} form={form} upd={upd}/><Field label="Navio" field="navio" form={form} upd={upd}/><Field label="Container" field="container" form={form} upd={upd}/><Field label="Booking" field="booking" form={form} upd={upd}/><Field label="Transportadora" field="transportadora" opts={TRANSP} form={form} upd={upd}/></div>
+          <div className="fr mb16"><Field label="Porto de Carga" field="porto_carga" opts={cadData?.portos?.length?cadData.portos:PORTOS} form={form} upd={upd}/><Field label="Destino" field="destino" opts={cadData?.destinos?.length?cadData.destinos:DESTINOS} form={form} upd={upd}/><Field label="Navio" field="navio" form={form} upd={upd}/><Field label="Container" field="container" form={form} upd={upd}/><Field label="Booking" field="booking" form={form} upd={upd}/><Field label="Transportadora" field="transportadora" opts={cadData?.transportadoras?.length?cadData.transportadoras:TRANSP} form={form} upd={upd}/></div>
           <hr className="dv"/>
           <div className="st">Financeiro</div>
           <div className="fr mb16"><Field label="Valor USD" field="valor_usd" type="number" form={form} upd={upd}/><Field label="Frete USD" field="frete_usd" type="number" form={form} upd={upd}/><Field label="Agente" field="agente" form={form} upd={upd}/></div>
@@ -2164,6 +2186,115 @@ function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, f
         </div>
       </div>
     </div>}
+  </div>;
+}
+
+/* ══════════════════════════════════════════
+   CADASTROS — Clientes, Portos, Destinos, Transportadoras
+══════════════════════════════════════════ */
+const CAD_TABS = [
+  {key:"clientes",label:"Clientes",table:"cadastro_clientes"},
+  {key:"portos",label:"Portos",table:"cadastro_portos"},
+  {key:"destinos",label:"Destinos",table:"cadastro_destinos"},
+  {key:"transportadoras",label:"Transportadoras",table:"cadastro_transportadoras"},
+];
+
+function PgCad({cadData, refreshCad, notify}) {
+  const [tab,setTab]=useState("clientes");
+  const [newVal,setNewVal]=useState("");
+  const [editId,setEditId]=useState(null);
+  const [editVal,setEditVal]=useState("");
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(false);
+
+  const current = CAD_TABS.find(t=>t.key===tab);
+
+  /* Carregar items da tabela selecionada */
+  async function loadItems() {
+    setLoading(true);
+    const {data,error}=await db.from(current.table).select("*").order("nome");
+    if(error) notify("Erro: "+error.message,"err");
+    else setItems(data||[]);
+    setLoading(false);
+  }
+
+  useEffect(()=>{ loadItems(); setNewVal(""); setEditId(null); },[tab]);
+
+  /* Adicionar */
+  async function addItem() {
+    const val = newVal.trim().toUpperCase();
+    if(!val){notify("Digite um nome","err");return;}
+    if(items.some(i=>i.nome===val)){notify("Já existe","err");return;}
+    const {error}=await db.from(current.table).insert({nome:val});
+    if(error){notify("Erro: "+error.message,"err");return;}
+    setNewVal("");
+    await loadItems();
+    await refreshCad();
+    notify(`${val} adicionado`);
+  }
+
+  /* Editar */
+  async function saveEdit(id) {
+    const val = editVal.trim().toUpperCase();
+    if(!val){notify("Nome não pode ser vazio","err");return;}
+    if(items.some(i=>i.nome===val&&i.id!==id)){notify("Já existe","err");return;}
+    const {error}=await db.from(current.table).update({nome:val}).eq("id",id);
+    if(error){notify("Erro: "+error.message,"err");return;}
+    setEditId(null);
+    await loadItems();
+    await refreshCad();
+    notify("Atualizado");
+  }
+
+  /* Remover */
+  async function removeItem(id, nome) {
+    if(!confirm(`Remover "${nome}"?`)) return;
+    const {error}=await db.from(current.table).delete().eq("id",id);
+    if(error){notify("Erro: "+error.message,"err");return;}
+    await loadItems();
+    await refreshCad();
+    notify(`${nome} removido`);
+  }
+
+  return <div className="page">
+    <div className="ph">
+      <h2>Cadastros</h2>
+      <p>Gerenciar listas de clientes, portos, destinos e transportadoras</p>
+    </div>
+
+    {/* Sub-tabs */}
+    <div className="tabs">
+      {CAD_TABS.map(t=>(
+        <div key={t.key} className={`tab ${tab===t.key?"on":""}`} onClick={()=>setTab(t.key)}>{t.label}</div>
+      ))}
+    </div>
+
+    {/* Adicionar novo */}
+    <div className="card mb20">
+      <div style={{display:"flex",gap:10,alignItems:"center"}}>
+        <input className="sel" style={{flex:1}} placeholder={`Novo ${current.label.slice(0,-1).toLowerCase()}...`} value={newVal} onChange={e=>setNewVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addItem()}/>
+        <button className="btn bgx" onClick={addItem}>+ Adicionar</button>
+      </div>
+    </div>
+
+    {/* Lista */}
+    <div className="card">
+      {loading ? <div className="empty">Carregando...</div> :
+      items.length===0 ? <div className="empty">Nenhum cadastro</div> :
+      <div>{items.map(item=>(
+        <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid var(--border)"}}>
+          {editId===item.id ? <>
+            <input className="sel" style={{flex:1}} value={editVal} onChange={e=>setEditVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveEdit(item.id)} autoFocus/>
+            <button className="btn bgx bsm" onClick={()=>saveEdit(item.id)}>Salvar</button>
+            <button className="btn bsm" onClick={()=>setEditId(null)}>Cancelar</button>
+          </> : <>
+            <div style={{flex:1,fontSize:14,fontWeight:500,color:"var(--text)"}}>{item.nome}</div>
+            <button className="btn bsm" style={{fontSize:11}} onClick={()=>{setEditId(item.id);setEditVal(item.nome);}}>✏️ Editar</button>
+            <button className="btn bsm" style={{fontSize:11,color:"#DC2626"}} onClick={()=>removeItem(item.id,item.nome)}>🗑️ Remover</button>
+          </>}
+        </div>
+      ))}</div>}
+    </div>
   </div>;
 }
 
