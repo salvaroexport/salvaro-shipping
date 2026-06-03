@@ -1871,7 +1871,7 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
   /* Apenas registros live de 2026 que têm NF (faturados) e não foram recebidos */
   const pendentes = useMemo(()=>{
     return allRecs.filter(r=>!r._hist && r.nf && r.status_financeiro!=="RECEBIDO" && r.mes_ref && r.mes_ref.endsWith("2026")).map(r=>{
-      const prev=(()=>{const reg=regras[r.cliente];if(!reg)return null;if(reg.tipo==="eta"&&r.eta)return r.eta;if(reg.tipo==="etd"&&r.etd){const d=new Date(r.etd+"T00:00:00");d.setDate(d.getDate()+(reg.dias||0));return d.toISOString().slice(0,10);}return null;})();
+      const prev=(()=>{const reg=regras[r.cliente];if(!reg)return null;if(reg.tipo==="eta"&&r.eta){if(reg.dias&&reg.dias>0){const d=new Date(r.eta+"T00:00:00");d.setDate(d.getDate()+reg.dias);return d.toISOString().slice(0,10);}return r.eta;}if(reg.tipo==="etd"&&r.etd){const d=new Date(r.etd+"T00:00:00");d.setDate(d.getDate()+(reg.dias||0));return d.toISOString().slice(0,10);}return null;})();
       const cat = catRecebimento(r);
       if(!cat) return null; /* sem categoria = não aparece (ex: CARTEIRA) */
       const hoje = new Date(); hoje.setHours(0,0,0,0);
@@ -1885,7 +1885,7 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
   /* Recebidos de 2026 para análise */
   const recebidos = useMemo(()=>{
     return allRecs.filter(r=>!r._hist && r.data_pagamento && r.data_pagamento>="2026-01-01").map(r=>{
-      const prev=(()=>{const reg=regras[r.cliente];if(!reg)return null;if(reg.tipo==="eta"&&r.eta)return r.eta;if(reg.tipo==="etd"&&r.etd){const d=new Date(r.etd+"T00:00:00");d.setDate(d.getDate()+(reg.dias||0));return d.toISOString().slice(0,10);}return null;})();
+      const prev=(()=>{const reg=regras[r.cliente];if(!reg)return null;if(reg.tipo==="eta"&&r.eta){if(reg.dias&&reg.dias>0){const d=new Date(r.eta+"T00:00:00");d.setDate(d.getDate()+reg.dias);return d.toISOString().slice(0,10);}return r.eta;}if(reg.tipo==="etd"&&r.etd){const d=new Date(r.etd+"T00:00:00");d.setDate(d.getDate()+(reg.dias||0));return d.toISOString().slice(0,10);}return null;})();
       const real = r.data_pagamento;
       const diff = prev && real ? Math.round((new Date(real+"T00:00:00")-new Date(prev+"T00:00:00"))/(1000*60*60*24)) : null;
       return {...r, _prev:prev, _diff:diff};
@@ -2602,8 +2602,12 @@ function PrazosPanel({notify}) {
   const [loading,setLoading]=useState(false);
   const [editId,setEditId]=useState(null);
   const [editForm,setEditForm]=useState({});
+  const [clientes,setClientes]=useState([]);
   const E0={cliente:"",tipo:"eta",dias:"",obs:""};
   const [form,setForm]=useState(E0);
+
+  // Clientes fixos (base) + dinâmicos do Supabase
+  const CLIENTES_BASE=["BLUELINX","ECMD","EMPIRE","KLUMB","METRIE","SHAMROCK","WOODGRAIN"];
 
   async function loadItems(){
     setLoading(true);
@@ -2612,14 +2616,33 @@ function PrazosPanel({notify}) {
     else setItems(data||[]);
     setLoading(false);
   }
-  useEffect(()=>{loadItems();},[]);
+
+  async function loadClientes(){
+    const {data}=await db.from("cadastro_clientes").select("nome").order("nome");
+    const fromDB=(data||[]).map(r=>r.nome);
+    // Merge: base + DB, sem duplicatas, ordenado
+    const merged=[...new Set([...CLIENTES_BASE,...fromDB])].sort();
+    setClientes(merged);
+  }
+
+  useEffect(()=>{loadItems();loadClientes();},[]);
+
+  function diasObrigatorio(tipo){ return tipo==="etd"||tipo==="eta_d"; }
 
   async function addItem(){
     const val=form.cliente.trim().toUpperCase();
-    if(!val){notify("Digite o nome do cliente","err");return;}
-    if(form.tipo==="etd"&&(!form.dias||isNaN(parseInt(form.dias)))){notify("Informe os dias para ETD+Xd","err");return;}
+    if(!val){notify("Selecione ou digite o cliente","err");return;}
+    if(diasObrigatorio(form.tipo)&&(!form.dias||isNaN(parseInt(form.dias)))){
+      notify("Informe os dias","err");return;
+    }
     if(items.some(i=>i.cliente===val)){notify("Cliente já cadastrado — use Editar","err");return;}
-    const payload={cliente:val,tipo:form.tipo,dias:form.tipo==="etd"?parseInt(form.dias):null,obs:form.obs||null};
+    const payload={
+      cliente:val,
+      tipo:form.tipo==="eta_d"?"eta":form.tipo,  // salva 'eta' com dias preenchido
+      dias:diasObrigatorio(form.tipo)?parseInt(form.dias):null,
+      obs:form.obs||null
+    };
+    // Para ETA+X dias usamos tipo='eta' com dias preenchido — distingue de ETA puro (dias=null)
     const {error}=await db.from("cadastro_prazos_pgto").insert(payload);
     if(error){notify("Erro: "+error.message,"err");return;}
     setForm(E0); await loadItems(); notify(`Prazo de ${val} cadastrado`);
@@ -2628,9 +2651,16 @@ function PrazosPanel({notify}) {
   async function saveEdit(id){
     const val=editForm.cliente.trim().toUpperCase();
     if(!val){notify("Nome vazio","err");return;}
-    if(editForm.tipo==="etd"&&(!editForm.dias||isNaN(parseInt(editForm.dias)))){notify("Informe os dias","err");return;}
+    if(diasObrigatorio(editForm.tipo)&&(!editForm.dias||isNaN(parseInt(editForm.dias)))){
+      notify("Informe os dias","err");return;
+    }
     if(items.some(i=>i.cliente===val&&i.id!==id)){notify("Já existe","err");return;}
-    const payload={cliente:val,tipo:editForm.tipo,dias:editForm.tipo==="etd"?parseInt(editForm.dias):null,obs:editForm.obs||null};
+    const payload={
+      cliente:val,
+      tipo:editForm.tipo==="eta_d"?"eta":editForm.tipo,
+      dias:diasObrigatorio(editForm.tipo)?parseInt(editForm.dias):null,
+      obs:editForm.obs||null
+    };
     const {error}=await db.from("cadastro_prazos_pgto").update(payload).eq("id",id);
     if(error){notify("Erro: "+error.message,"err");return;}
     setEditId(null); await loadItems(); notify("Atualizado");
@@ -2643,27 +2673,91 @@ function PrazosPanel({notify}) {
     await loadItems(); notify(`${nome} removido`);
   }
 
-  const prazoLabel=item=>item.tipo==="eta"?"ETA (chegada)":`ETD + ${item.dias} dias`;
+  // Reconstrói o tipo display a partir de {tipo, dias}
+  function tipoDisplay(item){
+    if(item.tipo==="eta"&&(item.dias===null||item.dias===0)) return "eta";
+    if(item.tipo==="eta"&&item.dias>0) return "eta_d";
+    return "etd";
+  }
+
+  function prazoLabel(item){
+    const td=tipoDisplay(item);
+    if(td==="eta")   return "ETA — na chegada";
+    if(td==="eta_d") return `ETA + ${item.dias} dias`;
+    return `ETD + ${item.dias} dias`;
+  }
+
+  function prazoColor(item){
+    const td=tipoDisplay(item);
+    if(td==="eta")   return {bg:"#DCFCE7",color:"#059669"};
+    if(td==="eta_d") return {bg:"#D1FAE5",color:"#047857"};
+    return {bg:"var(--blue3)",color:"var(--blue)"};
+  }
+
+  const tipoNeedsdays = diasObrigatorio(form.tipo);
+  const editTipoNeedsdays = diasObrigatorio(editForm.tipo);
+
+  // Clientes já cadastrados (para excluir do dropdown de novo)
+  const clientesCadastrados = new Set(items.map(i=>i.cliente));
+  const clientesDisponiveis = clientes.filter(c=>!clientesCadastrados.has(c));
 
   return <div>
+    {/* ── Formulário adicionar ── */}
     <div className="card mb20">
       <div className="ct" style={{marginBottom:12}}>Novo Prazo de Pagamento</div>
-      <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 90px 1fr auto",gap:10,alignItems:"end"}}>
-        <PrazosField label="Cliente *" field="cliente" form={form} upd={(k,v)=>setForm(f=>({...f,[k]:v}))}/>
-        <div className="field"><label>Tipo de Prazo *</label>
-          <select value={form.tipo} onChange={e=>setForm(f=>({...f,tipo:e.target.value}))}>
-            <option value="eta">ETA (data de chegada)</option>
+      <div style={{display:"grid",gridTemplateColumns:"1.4fr 1.2fr 90px 1fr auto",gap:10,alignItems:"end"}}>
+
+        {/* Cliente — dropdown + opção digitar */}
+        <div className="field">
+          <label>Cliente *</label>
+          <select value={form.cliente} onChange={e=>setForm(f=>({...f,cliente:e.target.value}))}>
+            <option value="">— selecione —</option>
+            {clientesDisponiveis.map(c=><option key={c} value={c}>{c}</option>)}
+            <option value="__outro__">✏️ Outro (digitar)</option>
+          </select>
+          {form.cliente==="__outro__"&&
+            <input style={{marginTop:6}} placeholder="Nome do cliente..." autoFocus
+              onChange={e=>setForm(f=>({...f,cliente:e.target.value==="__outro__"?"":e.target.value}))}/>}
+        </div>
+
+        {/* Tipo de prazo */}
+        <div className="field">
+          <label>Tipo de Prazo *</label>
+          <select value={form.tipo} onChange={e=>setForm(f=>({...f,tipo:e.target.value,dias:""}))}>
+            <option value="eta">ETA — na chegada</option>
+            <option value="eta_d">ETA + X dias</option>
             <option value="etd">ETD + X dias</option>
           </select>
         </div>
-        <div className="field"><label>Dias</label>
-          <input type="number" min="0" max="365" value={form.dias} onChange={e=>setForm(f=>({...f,dias:e.target.value}))}
-            placeholder="30" disabled={form.tipo!=="etd"} style={{opacity:form.tipo!=="etd"?0.35:1}}/>
+
+        {/* Dias */}
+        <div className="field">
+          <label>Dias</label>
+          <input type="number" min="1" max="365" value={form.dias}
+            onChange={e=>setForm(f=>({...f,dias:e.target.value}))}
+            placeholder="ex: 30"
+            disabled={!tipoNeedsdays}
+            style={{opacity:tipoNeedsdays?1:0.3}}/>
         </div>
-        <PrazosField label="Observações (opcional)" field="obs" form={form} upd={(k,v)=>setForm(f=>({...f,[k]:v}))}/>
+
+        {/* Obs */}
+        <div className="field">
+          <label>Observações</label>
+          <input value={form.obs} onChange={e=>setForm(f=>({...f,obs:e.target.value}))} placeholder="Opcional..."/>
+        </div>
+
         <button className="btn bgx" style={{alignSelf:"flex-end"}} onClick={addItem}>+ Adicionar</button>
       </div>
+
+      {/* Legenda dos tipos */}
+      <div style={{marginTop:10,display:"flex",gap:16,fontSize:11,color:"var(--text2)"}}>
+        <span><strong style={{color:"#059669"}}>ETA</strong> — paga na chegada do navio ao porto de destino</span>
+        <span><strong style={{color:"#047857"}}>ETA + X dias</strong> — paga X dias após a chegada</span>
+        <span><strong style={{color:"var(--blue)"}}>ETD + X dias</strong> — paga X dias após o embarque</span>
+      </div>
     </div>
+
+    {/* ── Lista ── */}
     <div className="card">
       <div className="ct" style={{marginBottom:12}}>Prazos Cadastrados</div>
       {loading ? <div className="empty">Carregando...</div> :
@@ -2671,25 +2765,34 @@ function PrazosPanel({notify}) {
         <div style={{fontSize:28,marginBottom:8}}>🕐</div>
         <div style={{fontWeight:500,marginBottom:4}}>Nenhum prazo cadastrado ainda</div>
         <div style={{fontSize:12,color:"var(--text3)"}}>
-          Cadastre aqui os prazos de pagamento de cada cliente.<br/>
-          Eles serão usados automaticamente na aba <strong>Recebimentos</strong>.
+          Os prazos cadastrados aqui substituem as regras fixas da aba <strong>Recebimentos</strong>.
         </div>
       </div> :
       <div className="tw"><table>
-        <thead><tr><th>Cliente</th><th>Tipo / Prazo</th><th>Observações</th><th></th></tr></thead>
+        <thead><tr><th>Cliente</th><th>Prazo de Pagamento</th><th>Observações</th><th></th></tr></thead>
         <tbody>{items.map(item=>(
           <tr key={item.id}>
             {editId===item.id ? <>
-              <td><input style={{width:"100%",padding:"5px 8px",border:"1px solid var(--blue)",borderRadius:6,fontSize:13}}
-                value={editForm.cliente} onChange={e=>setEditForm(f=>({...f,cliente:e.target.value}))}/></td>
-              <td><div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <select style={{padding:"5px 8px",border:"1px solid var(--blue)",borderRadius:6,fontSize:13}}
-                  value={editForm.tipo} onChange={e=>setEditForm(f=>({...f,tipo:e.target.value}))}>
-                  <option value="eta">ETA</option><option value="etd">ETD + X dias</option>
+              <td>
+                <select style={{width:"100%",padding:"5px 8px",border:"1px solid var(--blue)",borderRadius:6,fontSize:13}}
+                  value={editForm.cliente} onChange={e=>setEditForm(f=>({...f,cliente:e.target.value}))}>
+                  <option value={editForm.cliente}>{editForm.cliente}</option>
+                  {clientes.filter(c=>c!==editForm.cliente).map(c=><option key={c}>{c}</option>)}
                 </select>
-                {editForm.tipo==="etd"&&<input type="number" style={{width:60,padding:"5px 8px",border:"1px solid var(--blue)",borderRadius:6,fontSize:13}}
-                  value={editForm.dias} onChange={e=>setEditForm(f=>({...f,dias:e.target.value}))} placeholder="dias"/>}
-              </div></td>
+              </td>
+              <td>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <select style={{padding:"5px 8px",border:"1px solid var(--blue)",borderRadius:6,fontSize:13}}
+                    value={editForm.tipo} onChange={e=>setEditForm(f=>({...f,tipo:e.target.value,dias:""}))}>
+                    <option value="eta">ETA — na chegada</option>
+                    <option value="eta_d">ETA + X dias</option>
+                    <option value="etd">ETD + X dias</option>
+                  </select>
+                  {editTipoNeedsdays&&
+                    <input type="number" style={{width:65,padding:"5px 8px",border:"1px solid var(--blue)",borderRadius:6,fontSize:13}}
+                      value={editForm.dias} onChange={e=>setEditForm(f=>({...f,dias:e.target.value}))} placeholder="dias"/>}
+                </div>
+              </td>
               <td><input style={{width:"100%",padding:"5px 8px",border:"1px solid var(--border)",borderRadius:6,fontSize:13}}
                 value={editForm.obs||""} onChange={e=>setEditForm(f=>({...f,obs:e.target.value}))}/></td>
               <td style={{whiteSpace:"nowrap"}}>
@@ -2698,39 +2801,33 @@ function PrazosPanel({notify}) {
               </td>
             </> : <>
               <td><strong>{item.cliente}</strong></td>
-              <td><span style={{background:"var(--blue3)",color:"var(--blue)",padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:600}}>
-                {prazoLabel(item)}</span></td>
+              <td>
+                <span style={{...prazoColor(item),padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:600}}>
+                  {prazoLabel(item)}
+                </span>
+              </td>
               <td style={{color:"var(--text2)",fontSize:12}}>{item.obs||"—"}</td>
               <td style={{whiteSpace:"nowrap"}}>
-                <button className="btn bsm" style={{fontSize:11}} onClick={()=>{setEditId(item.id);setEditForm({cliente:item.cliente,tipo:item.tipo,dias:item.dias||"",obs:item.obs||""});}}>✏️ Editar</button>
-                <button className="btn bsm" style={{fontSize:11,color:"#DC2626",marginLeft:4}} onClick={()=>removeItem(item.id,item.cliente)}>🗑️</button>
+                <button className="btn bsm" style={{fontSize:11}} onClick={()=>{
+                  const td=tipoDisplay(item);
+                  setEditId(item.id);
+                  setEditForm({cliente:item.cliente,tipo:td,dias:item.dias||"",obs:item.obs||""});
+                }}>✏️ Editar</button>
+                <button className="btn bsm" style={{fontSize:11,color:"#DC2626",marginLeft:4}}
+                  onClick={()=>removeItem(item.id,item.cliente)}>🗑️</button>
               </td>
             </>}
           </tr>
         ))}</tbody>
       </table></div>}
       {items.length>0&&<div style={{marginTop:10,padding:"10px 14px",background:"var(--blue3)",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
-        <strong style={{color:"var(--blue)"}}>ℹ️ Como funciona:</strong> Os prazos acima substituem as regras fixas da aba
-        <strong> Recebimentos</strong>. <em>ETA</em> = data de chegada do navio; <em>ETD + X dias</em> = X dias após embarque.
+        <strong style={{color:"var(--blue)"}}>ℹ️</strong> Prazos acima substituem as regras fixas na aba <strong>Recebimentos</strong>.
+        Clientes sem prazo cadastrado continuam usando a regra padrão do código.
       </div>}
     </div>
   </div>;
 }
 
-/* ── 4. CONTAINER MODAL ────────────────────────────────────────── */
-const PellField = ({label,field,type="text",opts=null,form,upd}) => (
-  <div className="field">
-    <label>{label}</label>
-    {opts ? <select value={form[field]||""} onChange={e=>upd(field,e.target.value)}>
-        <option value="">— selecione —</option>
-        {opts.map(o=><option key={o}>{o}</option>)}
-      </select>
-    : <input type={type} value={form[field]||""} onChange={e=>upd(field,e.target.value)}/>}
-  </div>
-);
-
-const fmtEUR = v => (!v&&v!==0)?"—":new Intl.NumberFormat("de-DE",{style:"currency",currency:"EUR",minimumFractionDigits:2}).format(v);
-const fmtTon = v => (!v&&v!==0)?"—":`${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:3})} t`;
 
 function ContainerModal({invoice, invoiceId, onClose, notify}) {
   const [rows,setRows]=useState([]);
