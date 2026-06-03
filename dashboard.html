@@ -1862,35 +1862,58 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
   const [regras,setRegras]=useState(REGRA_PGTO);
   useEffect(()=>{
     db.from("cadastro_prazos_pgto").select("*").then(({data})=>{
-      if(!data||!data.length) return;
       const m={...REGRA_PGTO};
-      data.forEach(r=>{ m[r.cliente]={tipo:r.tipo,dias:r.dias||0,label:r.tipo==="eta"?"ETA (chegada)":`ETD +${r.dias}d`}; });
+      (data||[]).forEach(r=>{
+        // tipo "eta" com dias>0 = ETA+X dias; sem dias = ETA puro
+        const label=r.tipo==="eta"?(r.dias&&r.dias>0?`ETA +${r.dias}d`:"ETA (chegada)"):`ETD +${r.dias}d`;
+        m[r.cliente]={tipo:r.tipo,dias:r.dias||0,label};
+      });
       setRegras(m);
     });
   },[]);
   /* Apenas registros live de 2026 que têm NF (faturados) e não foram recebidos */
   const pendentes = useMemo(()=>{
     return allRecs.filter(r=>!r._hist && r.nf && r.status_financeiro!=="RECEBIDO" && r.mes_ref && r.mes_ref.endsWith("2026")).map(r=>{
-      const prev=(()=>{const reg=regras[r.cliente];if(!reg)return null;if(reg.tipo==="eta"&&r.eta){if(reg.dias&&reg.dias>0){const d=new Date(r.eta+"T00:00:00");d.setDate(d.getDate()+reg.dias);return d.toISOString().slice(0,10);}return r.eta;}if(reg.tipo==="etd"&&r.etd){const d=new Date(r.etd+"T00:00:00");d.setDate(d.getDate()+(reg.dias||0));return d.toISOString().slice(0,10);}return null;})();
+      const reg=regras[r.cliente];
+      const prev=(()=>{
+        if(!reg) return null;
+        if(reg.tipo==="eta"&&r.eta){
+          if(reg.dias&&reg.dias>0){const d=new Date(r.eta+"T00:00:00");d.setDate(d.getDate()+reg.dias);return d.toISOString().slice(0,10);}
+          return r.eta;
+        }
+        if(reg.tipo==="etd"&&r.etd){const d=new Date(r.etd+"T00:00:00");d.setDate(d.getDate()+(reg.dias||0));return d.toISOString().slice(0,10);}
+        return null;
+      })();
+      const _regraLabel=reg?reg.label||reg.tipo:"—";
       const cat = catRecebimento(r);
-      if(!cat) return null; /* sem categoria = não aparece (ex: CARTEIRA) */
+      if(!cat) return null;
       const hoje = new Date(); hoje.setHours(0,0,0,0);
       const prevDate = prev ? new Date(prev+"T00:00:00") : null;
       const diasAte = prevDate ? Math.round((prevDate - hoje)/(1000*60*60*24)) : null;
       const atrasado = prevDate && prevDate < hoje;
-      return {...r, _prev:prev, _cat:atrasado?"ATRASADO":cat, _diasAte:diasAte};
-    }).sort((a,b)=>(a._diasAte||999)-(b._diasAte||999));
-  },[allRecs]);
+      return {...r, _prev:prev, _regraLabel, _cat:atrasado?"ATRASADO":cat, _diasAte:diasAte};
+    }).filter(Boolean).sort((a,b)=>(a._diasAte||999)-(b._diasAte||999));
+  },[allRecs,regras]);
 
   /* Recebidos de 2026 para análise */
   const recebidos = useMemo(()=>{
     return allRecs.filter(r=>!r._hist && r.data_pagamento && r.data_pagamento>="2026-01-01").map(r=>{
-      const prev=(()=>{const reg=regras[r.cliente];if(!reg)return null;if(reg.tipo==="eta"&&r.eta){if(reg.dias&&reg.dias>0){const d=new Date(r.eta+"T00:00:00");d.setDate(d.getDate()+reg.dias);return d.toISOString().slice(0,10);}return r.eta;}if(reg.tipo==="etd"&&r.etd){const d=new Date(r.etd+"T00:00:00");d.setDate(d.getDate()+(reg.dias||0));return d.toISOString().slice(0,10);}return null;})();
+      const reg=regras[r.cliente];
+      const prev=(()=>{
+        if(!reg) return null;
+        if(reg.tipo==="eta"&&r.eta){
+          if(reg.dias&&reg.dias>0){const d=new Date(r.eta+"T00:00:00");d.setDate(d.getDate()+reg.dias);return d.toISOString().slice(0,10);}
+          return r.eta;
+        }
+        if(reg.tipo==="etd"&&r.etd){const d=new Date(r.etd+"T00:00:00");d.setDate(d.getDate()+(reg.dias||0));return d.toISOString().slice(0,10);}
+        return null;
+      })();
+      const _regraLabel=reg?reg.label||reg.tipo:"—";
       const real = r.data_pagamento;
       const diff = prev && real ? Math.round((new Date(real+"T00:00:00")-new Date(prev+"T00:00:00"))/(1000*60*60*24)) : null;
-      return {...r, _prev:prev, _diff:diff};
+      return {...r, _prev:prev, _regraLabel, _diff:diff};
     });
-  },[allRecs]);
+  },[allRecs,regras]);
 
   /* KPIs */
   const totalPendente = pendentes.reduce((s,r)=>s+(r.valor_usd||0),0);
@@ -1981,7 +2004,7 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
                 <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:500}}>{fmtUSD(r.valor_usd)}</td>
                 <td>{fmtDate(r.etd)}</td>
                 <td>{fmtDate(r.eta)}</td>
-                <td>{r._prev?fmtDate(r._prev):"—"}</td>
+                <td><div><div>{r._prev?fmtDate(r._prev):"—"}</div>{r._regraLabel&&r._prev?<div style={{fontSize:10,color:"var(--text3)",marginTop:2}}>{r._regraLabel}</div>:null}</div>{r._regraLabel&&r._prev?<div style={{fontSize:10,color:"var(--text3)",marginTop:2}}>{r._regraLabel}</div>:null}</td>
                 <td style={{fontWeight:600,color:r._diasAte!==null?(r._diasAte<0?"#059669":"#991B1B"):"var(--text3)"}}>
                   {r._diasAte!==null?(r._diasAte<=0?`${Math.abs(r._diasAte)}d`:`+${r._diasAte}d`):"—"}
                 </td>
