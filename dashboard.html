@@ -910,6 +910,7 @@ function App() {
     {id:"rec", ic:IC.rec, lb:"Recebimentos"},
     {id:"base",ic:IC.db,  lb:"Base de Dados"},
     {id:"cad", ic:IC.cad, lb:"Cadastros"},
+    {id:"pell",ic:IC.ship,lb:"Pellets 🌲"},
     {id:"rel", ic:IC.rep, lb:"Relatórios"},
   ];
 
@@ -955,6 +956,7 @@ function App() {
               {pg==="rec"  && <PgRec  recs={recs} onSave={save} refresh={refresh} notify={notify}/>}
               {pg==="base" && <PgBase recs={recs} onSave={save} onDel={remove} notify={notify} q={baseQ} setQ={setBaseQ} fC={baseFC} setFC={setBaseFC} fM={baseFM} setFM={setBaseFM} fD={baseFD} setFD={setBaseFD} cadData={cadData}/>}
               {pg==="cad"  && <PgCad  cadData={cadData} refreshCad={loadCadastros} notify={notify}/>}
+              {pg==="pell" && <PgPell notify={notify} session={session}/>}
               {pg==="rel"  && <PgRel  recs={recs} tab={relTab} setTab={setRelTab} yr={relYr} setYr={setRelYr} mes={relMes} setMes={setRelMes}/>}
             </>
         }
@@ -1080,6 +1082,7 @@ function PgDash({recs, yr, setYr}) {
       <div className="kp"><div className="kl">Média / CNTR</div><div className="kv gc" style={{fontSize:20}}>{fmtUSD(cnt?fat/cnt:0)}</div><YoY cur={cnt?fat/cnt:0} prev={cntPrev?fatPrev/cntPrev:0}/></div>
       <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(fret)}</div><div className="ks">{fat?((fret/fat)*100).toFixed(1)+"%":"—"} do fat.</div><YoY cur={fret} prev={fretPrev} invert={true}/></div>
       <div className="kp"><div className="kl">Clientes</div><div className="kv gr">{byCli.length}</div><div className="ks">no período</div></div>
+      <PellKpi/>
     </div>
     {yr==="TODOS" ? <>
       <div className="card mb20">
@@ -1856,10 +1859,19 @@ function exportRecXLS(pendentes, cats) {
 }
 
 function PgRec({recs:allRecs, onSave, refresh, notify}) {
+  const [regras,setRegras]=useState(REGRA_PGTO);
+  useEffect(()=>{
+    db.from("cadastro_prazos_pgto").select("*").then(({data})=>{
+      if(!data||!data.length) return;
+      const m={...REGRA_PGTO};
+      data.forEach(r=>{ m[r.cliente]={tipo:r.tipo,dias:r.dias||0,label:r.tipo==="eta"?"ETA (chegada)":`ETD +${r.dias}d`}; });
+      setRegras(m);
+    });
+  },[]);
   /* Apenas registros live de 2026 que têm NF (faturados) e não foram recebidos */
   const pendentes = useMemo(()=>{
     return allRecs.filter(r=>!r._hist && r.nf && r.status_financeiro!=="RECEBIDO" && r.mes_ref && r.mes_ref.endsWith("2026")).map(r=>{
-      const prev = calcPgtoPrevisto(r);
+      const prev=(()=>{const reg=regras[r.cliente];if(!reg)return null;if(reg.tipo==="eta"&&r.eta)return r.eta;if(reg.tipo==="etd"&&r.etd){const d=new Date(r.etd+"T00:00:00");d.setDate(d.getDate()+(reg.dias||0));return d.toISOString().slice(0,10);}return null;})();
       const cat = catRecebimento(r);
       if(!cat) return null; /* sem categoria = não aparece (ex: CARTEIRA) */
       const hoje = new Date(); hoje.setHours(0,0,0,0);
@@ -1873,7 +1885,7 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
   /* Recebidos de 2026 para análise */
   const recebidos = useMemo(()=>{
     return allRecs.filter(r=>!r._hist && r.data_pagamento && r.data_pagamento>="2026-01-01").map(r=>{
-      const prev = calcPgtoPrevisto(r);
+      const prev=(()=>{const reg=regras[r.cliente];if(!reg)return null;if(reg.tipo==="eta"&&r.eta)return r.eta;if(reg.tipo==="etd"&&r.etd){const d=new Date(r.etd+"T00:00:00");d.setDate(d.getDate()+(reg.dias||0));return d.toISOString().slice(0,10);}return null;})();
       const real = r.data_pagamento;
       const diff = prev && real ? Math.round((new Date(real+"T00:00:00")-new Date(prev+"T00:00:00"))/(1000*60*60*24)) : null;
       return {...r, _prev:prev, _diff:diff};
@@ -2049,7 +2061,7 @@ function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, f
   const [modal,setModal]=useState(null); const [del,setDel]=useState(null); const [saving,setSaving]=useState(false);
   const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
   const fil=useMemo(()=>recs.filter(r=>{
-    if(q&&!String(r.invoice).includes(q)&&!(r.cliente||"").toLowerCase().includes(q.toLowerCase())&&!(r.navio||"").toLowerCase().includes(q.toLowerCase())) return false;
+    if(q&&!String(r.invoice).includes(q)&&!(r.cliente||'').toLowerCase().includes(q.toLowerCase())&&!(r.navio||'').toLowerCase().includes(q.toLowerCase())&&!(r.container||'').toLowerCase().includes(q.toLowerCase())&&!String(r.booking||'').toLowerCase().includes(q.toLowerCase())) return false;
     if(fC&&r.cliente!==fC) return false;
     if(fM&&r.mes_ref!==fM) return false;
     if(fD&&r.status_doc!==fD) return false;
@@ -2112,7 +2124,7 @@ function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, f
       </div>
     </div>
     <div className="fb">
-      <input placeholder="Buscar invoice, cliente, navio..." value={q} onChange={e=>setQ(e.target.value)} style={{width:260}}/>
+      <input placeholder="Buscar invoice, cliente, navio, container, booking..." value={q} onChange={e=>setQ(e.target.value)} style={{width:260}}/>
       <select value={fC} onChange={e=>setFC(e.target.value)}><option value="">Todos os clientes</option>{CLIENTES.map(c=><option key={c}>{c}</option>)}</select>
       <select value={fM} onChange={e=>setFM(e.target.value)}><option value="">Todos os meses</option>{avail.map(m=><option key={m}>{m}</option>)}</select>
       <select value={fD} onChange={e=>setFD(e.target.value)}><option value="">Todos status doc</option>{STATUS_DOC.map(s=><option key={s}>{s}</option>)}</select>
@@ -2197,6 +2209,7 @@ const CAD_TABS = [
   {key:"portos",label:"Portos",table:"cadastro_portos"},
   {key:"destinos",label:"Destinos",table:"cadastro_destinos"},
   {key:"transportadoras",label:"Transportadoras",table:"cadastro_transportadoras"},
+  {key:"prazos",label:"Prazos de Pagamento",table:"cadastro_prazos_pgto",special:"prazos"},
 ];
 
 function PgCad({cadData, refreshCad, notify}) {
@@ -2279,7 +2292,8 @@ function PgCad({cadData, refreshCad, notify}) {
 
     {/* Lista */}
     <div className="card">
-      {loading ? <div className="empty">Carregando...</div> :
+      {current.special==="prazos" ? <PrazosPanel notify={notify}/> :
+      loading ? <div className="empty">Carregando...</div> :
       items.length===0 ? <div className="empty">Nenhum cadastro</div> :
       <div>{items.map(item=>(
         <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid var(--border)"}}>
@@ -2538,6 +2552,622 @@ function PgRel({recs, tab, setTab, yr, setYr, mes, setMes}) {
     </>}
   </div>;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   NOVOS COMPONENTES — Dashboard Salvaro v2.6
+   Injetar antes de ReactDOM.createRoot(...)
+   
+   Conteúdo:
+   1. PellKpi         — mini card EUR no Dashboard principal
+   2. PrazosField     — input helper para PrazosPanel
+   3. PrazosPanel     — painel de prazos de pagamento em Cadastros
+   4. ContainerModal  — modal de containers para pedidos de pellet
+   5. PgPell          — aba completa de exportação de pellets
+══════════════════════════════════════════════════════════════════ */
+
+/* ── 1. PELLET KPI ─────────────────────────────────────────────── */
+function PellKpi() {
+  const [data,setData]=useState({fat:0,cnt:0,loaded:false});
+  useEffect(()=>{
+    db.from("pellets_exportacoes").select("valor_eur,status").then(({data:rows})=>{
+      if(!rows){setData(d=>({...d,loaded:true}));return;}
+      const active=rows.filter(r=>r.status&&r.status!=="CANCELADO");
+      setData({fat:active.reduce((s,r)=>s+(parseFloat(r.valor_eur)||0),0),cnt:active.length,loaded:true});
+    });
+  },[]);
+  if(!data.loaded||!data.cnt) return null;
+  const fmtEUR=v=>new Intl.NumberFormat("de-DE",{style:"currency",currency:"EUR",minimumFractionDigits:2}).format(v);
+  return <div className="kp" style={{borderLeft:"3px solid #7C3AED",background:"linear-gradient(135deg,#F5F3FF,#fff)"}}>
+    <div className="kl" style={{color:"#7C3AED"}}>🌲 Pellets (EUR)</div>
+    <div className="kv" style={{fontSize:18,color:"#7C3AED"}}>{fmtEUR(data.fat)}</div>
+    <div className="ks">{data.cnt} pedidos ativos</div>
+  </div>;
+}
+
+/* ── 2. PRAZOS FIELD HELPER ────────────────────────────────────── */
+const PrazosField = ({label,field,type="text",opts=null,form,upd}) => (
+  <div className="field">
+    <label>{label}</label>
+    {opts ? <select value={form[field]||""} onChange={e=>upd(field,e.target.value)}>
+        <option value="">— selecione —</option>
+        {opts.map(o=><option key={o}>{o}</option>)}
+      </select>
+    : <input type={type} value={form[field]||""} onChange={e=>upd(field,e.target.value)}/>}
+  </div>
+);
+
+/* ── 3. PRAZOS PANEL ───────────────────────────────────────────── */
+function PrazosPanel({notify}) {
+  const [items,setItems]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [editForm,setEditForm]=useState({});
+  const E0={cliente:"",tipo:"eta",dias:"",obs:""};
+  const [form,setForm]=useState(E0);
+
+  async function loadItems(){
+    setLoading(true);
+    const {data,error}=await db.from("cadastro_prazos_pgto").select("*").order("cliente");
+    if(error) notify("Erro: "+error.message,"err");
+    else setItems(data||[]);
+    setLoading(false);
+  }
+  useEffect(()=>{loadItems();},[]);
+
+  async function addItem(){
+    const val=form.cliente.trim().toUpperCase();
+    if(!val){notify("Digite o nome do cliente","err");return;}
+    if(form.tipo==="etd"&&(!form.dias||isNaN(parseInt(form.dias)))){notify("Informe os dias para ETD+Xd","err");return;}
+    if(items.some(i=>i.cliente===val)){notify("Cliente já cadastrado — use Editar","err");return;}
+    const payload={cliente:val,tipo:form.tipo,dias:form.tipo==="etd"?parseInt(form.dias):null,obs:form.obs||null};
+    const {error}=await db.from("cadastro_prazos_pgto").insert(payload);
+    if(error){notify("Erro: "+error.message,"err");return;}
+    setForm(E0); await loadItems(); notify(`Prazo de ${val} cadastrado`);
+  }
+
+  async function saveEdit(id){
+    const val=editForm.cliente.trim().toUpperCase();
+    if(!val){notify("Nome vazio","err");return;}
+    if(editForm.tipo==="etd"&&(!editForm.dias||isNaN(parseInt(editForm.dias)))){notify("Informe os dias","err");return;}
+    if(items.some(i=>i.cliente===val&&i.id!==id)){notify("Já existe","err");return;}
+    const payload={cliente:val,tipo:editForm.tipo,dias:editForm.tipo==="etd"?parseInt(editForm.dias):null,obs:editForm.obs||null};
+    const {error}=await db.from("cadastro_prazos_pgto").update(payload).eq("id",id);
+    if(error){notify("Erro: "+error.message,"err");return;}
+    setEditId(null); await loadItems(); notify("Atualizado");
+  }
+
+  async function removeItem(id,nome){
+    if(!confirm(`Remover prazo de "${nome}"?`)) return;
+    const {error}=await db.from("cadastro_prazos_pgto").delete().eq("id",id);
+    if(error){notify("Erro","err");return;}
+    await loadItems(); notify(`${nome} removido`);
+  }
+
+  const prazoLabel=item=>item.tipo==="eta"?"ETA (chegada)":`ETD + ${item.dias} dias`;
+
+  return <div>
+    <div className="card mb20">
+      <div className="ct" style={{marginBottom:12}}>Novo Prazo de Pagamento</div>
+      <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr 90px 1fr auto",gap:10,alignItems:"end"}}>
+        <PrazosField label="Cliente *" field="cliente" form={form} upd={(k,v)=>setForm(f=>({...f,[k]:v}))}/>
+        <div className="field"><label>Tipo de Prazo *</label>
+          <select value={form.tipo} onChange={e=>setForm(f=>({...f,tipo:e.target.value}))}>
+            <option value="eta">ETA (data de chegada)</option>
+            <option value="etd">ETD + X dias</option>
+          </select>
+        </div>
+        <div className="field"><label>Dias</label>
+          <input type="number" min="0" max="365" value={form.dias} onChange={e=>setForm(f=>({...f,dias:e.target.value}))}
+            placeholder="30" disabled={form.tipo!=="etd"} style={{opacity:form.tipo!=="etd"?0.35:1}}/>
+        </div>
+        <PrazosField label="Observações (opcional)" field="obs" form={form} upd={(k,v)=>setForm(f=>({...f,[k]:v}))}/>
+        <button className="btn bgx" style={{alignSelf:"flex-end"}} onClick={addItem}>+ Adicionar</button>
+      </div>
+    </div>
+    <div className="card">
+      <div className="ct" style={{marginBottom:12}}>Prazos Cadastrados</div>
+      {loading ? <div className="empty">Carregando...</div> :
+      items.length===0 ? <div className="empty" style={{padding:28}}>
+        <div style={{fontSize:28,marginBottom:8}}>🕐</div>
+        <div style={{fontWeight:500,marginBottom:4}}>Nenhum prazo cadastrado ainda</div>
+        <div style={{fontSize:12,color:"var(--text3)"}}>
+          Cadastre aqui os prazos de pagamento de cada cliente.<br/>
+          Eles serão usados automaticamente na aba <strong>Recebimentos</strong>.
+        </div>
+      </div> :
+      <div className="tw"><table>
+        <thead><tr><th>Cliente</th><th>Tipo / Prazo</th><th>Observações</th><th></th></tr></thead>
+        <tbody>{items.map(item=>(
+          <tr key={item.id}>
+            {editId===item.id ? <>
+              <td><input style={{width:"100%",padding:"5px 8px",border:"1px solid var(--blue)",borderRadius:6,fontSize:13}}
+                value={editForm.cliente} onChange={e=>setEditForm(f=>({...f,cliente:e.target.value}))}/></td>
+              <td><div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <select style={{padding:"5px 8px",border:"1px solid var(--blue)",borderRadius:6,fontSize:13}}
+                  value={editForm.tipo} onChange={e=>setEditForm(f=>({...f,tipo:e.target.value}))}>
+                  <option value="eta">ETA</option><option value="etd">ETD + X dias</option>
+                </select>
+                {editForm.tipo==="etd"&&<input type="number" style={{width:60,padding:"5px 8px",border:"1px solid var(--blue)",borderRadius:6,fontSize:13}}
+                  value={editForm.dias} onChange={e=>setEditForm(f=>({...f,dias:e.target.value}))} placeholder="dias"/>}
+              </div></td>
+              <td><input style={{width:"100%",padding:"5px 8px",border:"1px solid var(--border)",borderRadius:6,fontSize:13}}
+                value={editForm.obs||""} onChange={e=>setEditForm(f=>({...f,obs:e.target.value}))}/></td>
+              <td style={{whiteSpace:"nowrap"}}>
+                <button className="btn bgx bsm" onClick={()=>saveEdit(item.id)}>Salvar</button>
+                <button className="btn bsm" style={{marginLeft:4}} onClick={()=>setEditId(null)}>Cancelar</button>
+              </td>
+            </> : <>
+              <td><strong>{item.cliente}</strong></td>
+              <td><span style={{background:"var(--blue3)",color:"var(--blue)",padding:"3px 10px",borderRadius:10,fontSize:11,fontWeight:600}}>
+                {prazoLabel(item)}</span></td>
+              <td style={{color:"var(--text2)",fontSize:12}}>{item.obs||"—"}</td>
+              <td style={{whiteSpace:"nowrap"}}>
+                <button className="btn bsm" style={{fontSize:11}} onClick={()=>{setEditId(item.id);setEditForm({cliente:item.cliente,tipo:item.tipo,dias:item.dias||"",obs:item.obs||""});}}>✏️ Editar</button>
+                <button className="btn bsm" style={{fontSize:11,color:"#DC2626",marginLeft:4}} onClick={()=>removeItem(item.id,item.cliente)}>🗑️</button>
+              </td>
+            </>}
+          </tr>
+        ))}</tbody>
+      </table></div>}
+      {items.length>0&&<div style={{marginTop:10,padding:"10px 14px",background:"var(--blue3)",borderRadius:8,fontSize:12,color:"var(--text2)"}}>
+        <strong style={{color:"var(--blue)"}}>ℹ️ Como funciona:</strong> Os prazos acima substituem as regras fixas da aba
+        <strong> Recebimentos</strong>. <em>ETA</em> = data de chegada do navio; <em>ETD + X dias</em> = X dias após embarque.
+      </div>}
+    </div>
+  </div>;
+}
+
+/* ── 4. CONTAINER MODAL ────────────────────────────────────────── */
+const PellField = ({label,field,type="text",opts=null,form,upd}) => (
+  <div className="field">
+    <label>{label}</label>
+    {opts ? <select value={form[field]||""} onChange={e=>upd(field,e.target.value)}>
+        <option value="">— selecione —</option>
+        {opts.map(o=><option key={o}>{o}</option>)}
+      </select>
+    : <input type={type} value={form[field]||""} onChange={e=>upd(field,e.target.value)}/>}
+  </div>
+);
+
+const fmtEUR = v => (!v&&v!==0)?"—":new Intl.NumberFormat("de-DE",{style:"currency",currency:"EUR",minimumFractionDigits:2}).format(v);
+const fmtTon = v => (!v&&v!==0)?"—":`${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:1,maximumFractionDigits:3})} t`;
+
+function ContainerModal({invoice, invoiceId, onClose, notify}) {
+  const [rows,setRows]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const CE0={container:"",numero:"",peso_ton:"",lacre:"",navio:"",etd:"",eta:"",obs:""};
+  const [cform,setCform]=useState(CE0);
+  const [editIdx,setEditIdx]=useState(null);
+  const cu=(k,v)=>setCform(f=>({...f,[k]:v}));
+
+  async function loadC(){
+    setLoading(true);
+    const {data,error}=await db.from("pellets_containers").select("*").eq("pellet_id",invoiceId).order("numero");
+    if(error) notify("Erro: "+error.message,"err");
+    else setRows(data||[]);
+    setLoading(false);
+  }
+  useEffect(()=>{if(invoiceId)loadC();},[invoiceId]);
+
+  async function saveRow(){
+    if(!cform.container){notify("Container obrigatório","err");return;}
+    setSaving(true);
+    const payload={pellet_id:invoiceId,container:cform.container,numero:parseInt(cform.numero)||null,
+      peso_ton:parseFloat(cform.peso_ton)||null,lacre:cform.lacre||null,navio:cform.navio||null,
+      etd:cform.etd||null,eta:cform.eta||null,obs:cform.obs||null};
+    let error;
+    if(editIdx!==null) ({error}=await db.from("pellets_containers").update(payload).eq("id",rows[editIdx].id));
+    else ({error}=await db.from("pellets_containers").insert(payload));
+    setSaving(false);
+    if(error){notify("Erro: "+error.message,"err");return;}
+    setCform(CE0); setEditIdx(null); await loadC(); notify("Container salvo");
+  }
+
+  async function removeRow(id){
+    if(!confirm("Remover este container?")) return;
+    await db.from("pellets_containers").delete().eq("id",id);
+    await loadC(); notify("Removido");
+  }
+
+  const totalPeso=rows.reduce((s,r)=>s+(r.peso_ton||0),0);
+
+  return <div className="overlay" onClick={onClose}>
+    <div className="modal" style={{maxWidth:920}} onClick={e=>e.stopPropagation()}>
+      <div className="mh">
+        <h3>📦 Containers — Invoice <span style={{color:"#7C3AED"}}>{invoice}</span></h3>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <span style={{fontSize:12,color:"var(--text3)"}}>{rows.length} container{rows.length!==1?"s":""} · {fmtTon(totalPeso)}</span>
+          <button className="btn bg2 bsm" onClick={onClose}>✕ Fechar</button>
+        </div>
+      </div>
+      <div className="mb2">
+        <div className="card mb16" style={{background:"var(--bg3)"}}>
+          <div className="ct" style={{marginBottom:10}}>{editIdx!==null?"✏️ Editar Container":"+ Adicionar Container"}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1.2fr 55px 100px 1fr 1.2fr 115px 115px auto",gap:8,alignItems:"end"}}>
+            <PellField label="Container *" field="container" form={cform} upd={cu}/>
+            <PellField label="Nº" field="numero" type="number" form={cform} upd={cu}/>
+            <PellField label="Peso (ton)" field="peso_ton" type="number" form={cform} upd={cu}/>
+            <PellField label="Lacre" field="lacre" form={cform} upd={cu}/>
+            <PellField label="Navio (se ≠ invoice)" field="navio" form={cform} upd={cu}/>
+            <PellField label="ETD" field="etd" type="date" form={cform} upd={cu}/>
+            <PellField label="ETA" field="eta" type="date" form={cform} upd={cu}/>
+            <div style={{display:"flex",gap:4,alignSelf:"flex-end"}}>
+              <button className="btn bgx bsm" onClick={saveRow} disabled={saving}>{saving?"...":"✓ OK"}</button>
+              {editIdx!==null&&<button className="btn bg2 bsm" onClick={()=>{setEditIdx(null);setCform(CE0);}}>✕</button>}
+            </div>
+          </div>
+          <div style={{marginTop:8,fontSize:11,color:"var(--text3)"}}>
+            💡 Navio, ETD e ETA do container só precisam ser preenchidos se forem <em>diferentes</em> do cabeçalho do invoice (quebra de lote).
+          </div>
+        </div>
+
+        {loading ? <div className="empty">Carregando...</div> :
+        rows.length===0 ? <div className="empty" style={{padding:20}}>Nenhum container cadastrado. Adicione acima.</div> :
+        <div className="tw"><table>
+          <thead><tr><th>#</th><th>Container</th><th>Peso</th><th>Lacre</th><th>Navio override</th><th>ETD</th><th>ETA</th><th>Obs</th><th></th></tr></thead>
+          <tbody>{rows.map((r,i)=>(
+            <tr key={r.id}>
+              <td style={{color:"var(--text3)"}}>{r.numero||i+1}</td>
+              <td><strong style={{fontFamily:"monospace",fontSize:12,color:"#7C3AED"}}>{r.container}</strong></td>
+              <td>{r.peso_ton?fmtTon(r.peso_ton):"—"}</td>
+              <td style={{fontSize:11,color:"var(--text2)"}}>{r.lacre||"—"}</td>
+              <td style={{fontSize:11,color:"var(--text2)"}}>{r.navio||<span style={{color:"var(--text3)"}}>idem invoice</span>}</td>
+              <td>{fmtDate(r.etd)}</td>
+              <td>{fmtDate(r.eta)}</td>
+              <td style={{color:"var(--text3)",fontSize:11,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis"}}>{r.obs||"—"}</td>
+              <td style={{whiteSpace:"nowrap"}}>
+                <button className="btn bsm" style={{fontSize:10}} onClick={()=>{setEditIdx(i);setCform({container:r.container,numero:r.numero||"",peso_ton:r.peso_ton||"",lacre:r.lacre||"",navio:r.navio||"",etd:r.etd||"",eta:r.eta||"",obs:r.obs||""});}}>✏️</button>
+                <button className="btn bsm" style={{fontSize:10,color:"#DC2626",marginLeft:2}} onClick={()=>removeRow(r.id)}>🗑️</button>
+              </td>
+            </tr>
+          ))}</tbody>
+          <tfoot><tr>
+            <td colSpan={2} style={{padding:"7px 13px",fontWeight:600,fontSize:12,color:"var(--text2)"}}>TOTAL</td>
+            <td style={{padding:"7px 13px",fontWeight:700,color:"#7C3AED",fontSize:13}}>{fmtTon(totalPeso)}</td>
+            <td colSpan={6}/>
+          </tr></tfoot>
+        </table></div>}
+      </div>
+    </div>
+  </div>;
+}
+
+/* ── 5. ABA PELLETS ────────────────────────────────────────────── */
+const STATUS_PELL = ["CARTEIRA","EM PRODUÇÃO","AGD ESTUFAGEM","NO PORTO","EMBARCADO","ENTREGUE","SINISTRO","CANCELADO"];
+const PAISES_PELL = ["ALEMANHA","ÁUSTRIA","BÉLGICA","DINAMARCA","ESPANHA","ESTADOS UNIDOS","FINLÂNDIA","FRANÇA","HOLANDA","INGLATERRA","ITÁLIA","NORUEGA","POLÔNIA","PORTUGAL","SUÉCIA","OUTROS"];
+const PORTOS_PELL = ["IMBITUBA","ITAJAI","PARANAGUÁ","SANTOS","ITAPOA","NAVEGANTES"];
+const MESES_PELL  = ALL_MONTHS;
+
+function PgPell({notify, session}) {
+  const [recs,setRecs]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [modal,setModal]=useState(null);
+  const [delRec,setDelRec]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [contModal,setContModal]=useState(null);
+  const [clientes,setClientes]=useState([]);
+  const [cntMap,setCntMap]=useState({});
+  const [q,setQ]=useState("");
+  const [fSt,setFSt]=useState("");
+  const [fCli,setFCli]=useState("");
+  const [tab,setTab]=useState("lista");
+
+  const E0={invoice:"",cliente:"",po:"",navio:"",porto_carga:"IMBITUBA",destino:"",destino_pais:"",
+    valor_eur:"",frete_eur:"",peso_ton:"",produto:"",lote:"",certificado:"",
+    etd:"",eta:"",estufagem:"",dl_carga:"",container:"",booking:"",bl:"",
+    status:"CARTEIRA",status_doc:"PENDENTE",agente:"",transportadora:"",
+    mes_ref:"",nf:"",obs:""};
+  const [form,setForm]=useState(E0);
+  const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  async function fetchRecs(){
+    const {data,error}=await db.from("pellets_exportacoes").select("*").order("invoice");
+    if(error){notify("Erro: "+error.message,"err");return;}
+    setRecs(data||[]);
+  }
+
+  async function loadContCounts(recs_arr){
+    if(!recs_arr.length) return;
+    const {data}=await db.from("pellets_containers").select("pellet_id");
+    if(!data) return;
+    const m={};
+    data.forEach(r=>{m[r.pellet_id]=(m[r.pellet_id]||0)+1;});
+    setCntMap(m);
+  }
+
+  async function load(){
+    setLoading(true);
+    await fetchRecs();
+    setLoading(false);
+  }
+
+  useEffect(()=>{load();},[]);
+  useEffect(()=>{if(recs.length)loadContCounts(recs);},[recs]);
+
+  useEffect(()=>{
+    db.from("cadastro_clientes").select("nome").order("nome").then(({data})=>{
+      setClientes((data||[]).map(r=>r.nome));
+    });
+  },[]);
+
+  const filtered=useMemo(()=>recs.filter(r=>{
+    if(q&&!String(r.invoice||"").toLowerCase().includes(q.toLowerCase())&&
+       !(r.cliente||"").toLowerCase().includes(q.toLowerCase())&&
+       !(r.navio||"").toLowerCase().includes(q.toLowerCase())) return false;
+    if(fSt&&r.status!==fSt) return false;
+    if(fCli&&r.cliente!==fCli) return false;
+    return true;
+  }),[recs,q,fSt,fCli]);
+
+  const kpis=useMemo(()=>({
+    fat:recs.reduce((s,r)=>s+(parseFloat(r.valor_eur)||0),0),
+    cnt:recs.length,
+    embarcados:recs.filter(r=>["EMBARCADO","ENTREGUE"].includes(r.status)).length,
+    pipeline:recs.filter(r=>!["ENTREGUE","CANCELADO"].includes(r.status)).reduce((s,r)=>s+(parseFloat(r.valor_eur)||0),0),
+    peso:recs.reduce((s,r)=>s+(parseFloat(r.peso_ton)||0),0),
+    fret:recs.reduce((s,r)=>s+(parseFloat(r.frete_eur)||0),0),
+  }),[recs]);
+
+  const byCli=useMemo(()=>{
+    const m={};recs.forEach(r=>{const c=r.cliente||"—";m[c]=(m[c]||0)+(parseFloat(r.valor_eur)||0);});
+    return Object.entries(m).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}));
+  },[recs]);
+
+  const byDst=useMemo(()=>{
+    const m={};recs.forEach(r=>{const d=r.destino_pais||r.destino||"—";m[d]=(m[d]||0)+1;});
+    return Object.entries(m).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}));
+  },[recs]);
+
+  const bySt=useMemo(()=>{
+    const m={};recs.forEach(r=>{const s=r.status||"—";m[s]=(m[s]||0)+1;});
+    return Object.entries(m).map(([l,v])=>({l,v}));
+  },[recs]);
+
+  function openEdit(r){
+    setForm({invoice:r.invoice||"",cliente:r.cliente||"",po:r.po||"",navio:r.navio||"",
+      porto_carga:r.porto_carga||"IMBITUBA",destino:r.destino||"",destino_pais:r.destino_pais||"",
+      valor_eur:r.valor_eur||"",frete_eur:r.frete_eur||"",peso_ton:r.peso_ton||"",
+      produto:r.produto||"",lote:r.lote||"",certificado:r.certificado||"",
+      etd:r.etd||"",eta:r.eta||"",estufagem:r.estufagem||"",dl_carga:r.dl_carga||"",
+      container:r.container||"",booking:r.booking||"",bl:r.bl||"",
+      status:r.status||"CARTEIRA",status_doc:r.status_doc||"PENDENTE",
+      agente:r.agente||"",transportadora:r.transportadora||"",
+      mes_ref:r.mes_ref||"",nf:r.nf||"",obs:r.obs||""});
+    setModal(r);
+  }
+
+  async function hSave(){
+    if(!form.invoice){notify("Invoice obrigatório","err");return;}
+    setSaving(true);
+    const DATE_FIELDS=["etd","eta","estufagem","dl_carga","bl"];
+    const clean={...form};
+    DATE_FIELDS.forEach(f=>{if(clean[f]==="")clean[f]=null;});
+    ["valor_eur","frete_eur","peso_ton"].forEach(f=>{clean[f]=clean[f]!=""?parseFloat(clean[f])||null:null;});
+    const {error}=await db.from("pellets_exportacoes").upsert(clean,{onConflict:"invoice"});
+    setSaving(false);
+    if(error){notify("Erro: "+error.message,"err");return;}
+    setModal(null); await fetchRecs(); notify("Salvo!");
+  }
+
+  async function hDel(invoice){
+    await db.from("pellets_exportacoes").delete().eq("invoice",invoice);
+    setDelRec(null); await fetchRecs(); notify("Excluído.");
+  }
+
+  const PELL_STATUS_CLR={
+    "CARTEIRA":"bgcart","EM PRODUÇÃO":"bgprod","AGD ESTUFAGEM":"bgy",
+    "NO PORTO":"bgo","EMBARCADO":"bgb","ENTREGUE":"bge",
+    "SINISTRO":"bgr","CANCELADO":"bgr"
+  };
+
+  return <div className="page">
+    <div className="ph">
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{display:"flex",alignItems:"center",gap:8}}>
+            🌲 Pellets
+            <span style={{fontSize:14,fontWeight:400,color:"var(--text2)",fontFamily:"DM Sans"}}>Controle de Exportação — EUR</span>
+          </h2>
+          <p>Gestão de pedidos de pellet com múltiplos containers por invoice</p>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <div className="tabs" style={{marginBottom:0,borderBottom:"none",gap:2}}>
+            {[["lista","📋 Lista"],["dash","📊 Dashboard"]].map(([id,lb])=>(
+              <div key={id} className={`tab${tab===id?" on":""}`} style={{fontSize:12,padding:"6px 12px"}} onClick={()=>setTab(id)}>{lb}</div>
+            ))}
+          </div>
+          <button className="btn" style={{background:"#7C3AED",color:"#fff"}} onClick={()=>{setForm(E0);setModal("new")}}>+ Novo Pedido</button>
+        </div>
+      </div>
+    </div>
+
+    {/* KPIs */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:16}}>
+      {[
+        {l:"Faturamento Total",v:fmtEUR(kpis.fat),s:kpis.cnt+" invoices",c:"#7C3AED"},
+        {l:"Pipeline Ativo",v:fmtEUR(kpis.pipeline),s:"em andamento",c:"var(--blue)"},
+        {l:"Embarcados",v:kpis.embarcados,s:"em trânsito + entregues",c:"#059669"},
+        {l:"Peso Total",v:fmtTon(kpis.peso),s:"toneladas",c:"var(--gold)"},
+        {l:"Frete Total",v:fmtEUR(kpis.fret),s:kpis.fat?((kpis.fret/kpis.fat)*100).toFixed(1)+"% do fat.":"—",c:"var(--text2)"},
+      ].map((k,i)=>(
+        <div key={i} className="kp" style={{borderLeft:`3px solid ${k.c}`}}>
+          <div className="kl" style={{color:k.c}}>{k.l}</div>
+          <div className="kv" style={{fontSize:i===2?22:18,color:k.c}}>{k.v}</div>
+          <div className="ks">{k.s}</div>
+        </div>
+      ))}
+    </div>
+
+    {/* Dashboard view */}
+    {tab==="dash" && <>
+      <div className="g2 mb20">
+        <div className="card"><div className="ct">Por Cliente (EUR)</div>
+          <Bar data={byCli} color="#7C3AED" fmt={v=>"€"+Math.round(v/1000)+"k"} total={kpis.fat}/>
+        </div>
+        <div className="card"><div className="ct">Por País de Destino (containers)</div>
+          <Donut data={byDst}/>
+        </div>
+      </div>
+      <div className="card mb20">
+        <div className="ct">Por Status</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:10}}>
+          {bySt.map(s=>(
+            <div key={s.l} style={{background:"var(--bg3)",border:"1px solid var(--border)",borderRadius:8,padding:"10px 16px",textAlign:"center",minWidth:100}}>
+              <div style={{fontFamily:"Syne",fontSize:22,fontWeight:700,color:"#7C3AED"}}>{s.v}</div>
+              <div style={{fontSize:11,color:"var(--text2)",marginTop:2}}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>}
+
+    {/* Lista view */}
+    {tab==="lista" && <>
+      <div className="fb" style={{marginBottom:12}}>
+        <input placeholder="Buscar invoice, cliente, navio..." value={q} onChange={e=>setQ(e.target.value)} style={{width:240}}/>
+        <select value={fCli} onChange={e=>setFCli(e.target.value)}>
+          <option value="">Todos os clientes</option>
+          {[...new Set(recs.map(r=>r.cliente).filter(Boolean))].sort().map(c=><option key={c}>{c}</option>)}
+        </select>
+        <select value={fSt} onChange={e=>setFSt(e.target.value)}>
+          <option value="">Todos os status</option>
+          {STATUS_PELL.map(s=><option key={s}>{s}</option>)}
+        </select>
+        {(q||fSt||fCli)&&<button className="btn bsm bg2" onClick={()=>{setQ("");setFSt("");setFCli("");}}>✕ Limpar</button>}
+      </div>
+      <div className="card">
+        {loading ? <div className="lw"><div className="spin2"/></div> :
+        <div className="tw"><table>
+          <thead><tr>
+            <th>Invoice</th><th>Mês Ref</th><th>Cliente</th><th>Destino / País</th>
+            <th>Valor EUR</th><th>Peso</th><th>ETD</th><th>ETA</th>
+            <th>Containers</th><th>Status</th><th>Doc</th><th></th>
+          </tr></thead>
+          <tbody>
+            {filtered.length===0
+              ?<tr><td colSpan={12} className="empty">Nenhum pedido encontrado</td></tr>
+              :filtered.map(r=>(
+                <tr key={r.invoice} onClick={()=>openEdit(r)} style={{cursor:"pointer"}}>
+                  <td><strong style={{color:"#7C3AED"}}>{r.invoice}</strong></td>
+                  <td className="m">{r.mes_ref||"—"}</td>
+                  <td style={{fontWeight:500}}>{r.cliente||"—"}</td>
+                  <td style={{color:"var(--text2)"}}>{r.destino_pais?`${r.destino||""}/${r.destino_pais}`:r.destino||"—"}</td>
+                  <td className="r" style={{fontVariantNumeric:"tabular-nums",fontWeight:500,color:"#7C3AED"}}>{fmtEUR(r.valor_eur)}</td>
+                  <td className="r">{r.peso_ton?fmtTon(r.peso_ton):"—"}</td>
+                  <td>{fmtDate(r.etd)}</td>
+                  <td>{fmtDate(r.eta)}</td>
+                  <td>
+                    <button className="btn bsm" style={{background:"#EDE9FE",color:"#7C3AED",border:"1px solid #DDD6FE",fontSize:11,fontWeight:600}}
+                      onClick={e=>{e.stopPropagation();setContModal({invoice:r.invoice,id:r.id});}}>
+                      📦 {cntMap[r.id]||0}
+                    </button>
+                  </td>
+                  <td><span className={`badge ${PELL_STATUS_CLR[r.status]||"bgg"}`}>{r.status||"—"}</span></td>
+                  <td><DocBadge v={r.status_doc}/></td>
+                  <td onClick={e=>{e.stopPropagation();setDelRec(r);}}>
+                    <button className="btn bd bsm">✕</button>
+                  </td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table></div>}
+      </div>
+    </>}
+
+    {/* ── Modal Novo / Editar ── */}
+    {modal&&<div className="overlay" onClick={()=>setModal(null)}>
+      <div className="modal" style={{maxWidth:920}} onClick={e=>e.stopPropagation()}>
+        <div className="mh">
+          <h3 style={{color:"#7C3AED"}}>{modal==="new"?"🌲 Novo Pedido de Pellet":"✏️ Editar — Invoice "+modal.invoice}</h3>
+          <button className="btn bg2 bsm" onClick={()=>setModal(null)}>✕</button>
+        </div>
+        <div className="mb2">
+          <div className="st">Identificação</div>
+          <div className="fr mb16">
+            <PellField label="Invoice *" field="invoice" form={form} upd={upd}/>
+            <PellField label="Mês Ref" field="mes_ref" opts={MESES_PELL} form={form} upd={upd}/>
+            <PellField label="Cliente" field="cliente" opts={clientes.length?clientes:undefined} form={form} upd={upd}/>
+            <PellField label="PO#" field="po" form={form} upd={upd}/>
+            <PellField label="NF" field="nf" form={form} upd={upd}/>
+          </div>
+          <hr className="dv"/>
+          <div className="st">Produto</div>
+          <div className="fr mb16">
+            <PellField label="Produto / Especificação" field="produto" form={form} upd={upd}/>
+            <PellField label="Peso Total (ton)" field="peso_ton" type="number" form={form} upd={upd}/>
+            <PellField label="Lote de Produção" field="lote" form={form} upd={upd}/>
+            <PellField label="Certificado / Análise" field="certificado" form={form} upd={upd}/>
+          </div>
+          <hr className="dv"/>
+          <div className="st">Logística</div>
+          <div className="fr mb16">
+            <PellField label="Porto de Carga" field="porto_carga" opts={PORTOS_PELL} form={form} upd={upd}/>
+            <PellField label="Destino (porto)" field="destino" form={form} upd={upd}/>
+            <PellField label="País de Destino" field="destino_pais" opts={PAISES_PELL} form={form} upd={upd}/>
+            <PellField label="Navio (principal)" field="navio" form={form} upd={upd}/>
+            <PellField label="Container (principal)" field="container" form={form} upd={upd}/>
+            <PellField label="Booking" field="booking" form={form} upd={upd}/>
+            <PellField label="Agente" field="agente" form={form} upd={upd}/>
+            <PellField label="Transportadora" field="transportadora" opts={TRANSP} form={form} upd={upd}/>
+          </div>
+          <hr className="dv"/>
+          <div className="st">Financeiro (EUR)</div>
+          <div className="fr mb16">
+            <PellField label="Valor EUR" field="valor_eur" type="number" form={form} upd={upd}/>
+            <PellField label="Frete EUR" field="frete_eur" type="number" form={form} upd={upd}/>
+          </div>
+          <hr className="dv"/>
+          <div className="st">Datas e Documentação</div>
+          <div className="fr">
+            <PellField label="DL Carga" field="dl_carga" type="date" form={form} upd={upd}/>
+            <PellField label="Estufagem" field="estufagem" type="date" form={form} upd={upd}/>
+            <PellField label="ETD" field="etd" type="date" form={form} upd={upd}/>
+            <PellField label="ETA" field="eta" type="date" form={form} upd={upd}/>
+            <PellField label="BL" field="bl" type="date" form={form} upd={upd}/>
+            <PellField label="Status Embarque" field="status" opts={STATUS_PELL} form={form} upd={upd}/>
+            <PellField label="Status Doc" field="status_doc" opts={STATUS_DOC} form={form} upd={upd}/>
+          </div>
+          <div style={{marginTop:12}} className="field">
+            <label>Observações</label>
+            <input value={form.obs||""} onChange={e=>upd("obs",e.target.value)} placeholder="Observações gerais do pedido..."/>
+          </div>
+          <div className="mac">
+            <button className="btn bg2" onClick={()=>setModal(null)}>Cancelar</button>
+            <button className="btn" style={{background:"#7C3AED",color:"#fff"}} onClick={hSave} disabled={saving}>{saving?"Salvando...":"💾 Salvar"}</button>
+          </div>
+          {modal!=="new"&&<div style={{marginTop:12,paddingTop:12,borderTop:"1px solid var(--border)",textAlign:"center"}}>
+            <button className="btn bsm" style={{background:"#EDE9FE",color:"#7C3AED",border:"1px solid #DDD6FE",fontSize:12}}
+              onClick={()=>{setModal(null);setContModal({invoice:modal.invoice,id:modal.id});}}>
+              📦 Gerenciar Containers ({cntMap[modal.id]||0}) deste Invoice
+            </button>
+          </div>}
+        </div>
+      </div>
+    </div>}
+
+    {/* ── Modal exclusão ── */}
+    {delRec&&<div className="overlay" onClick={()=>setDelRec(null)}>
+      <div className="modal" style={{maxWidth:380}} onClick={e=>e.stopPropagation()}>
+        <div className="mh"><h3>Confirmar Exclusão</h3></div>
+        <div className="mb2">
+          <p>Excluir invoice <strong style={{color:"#7C3AED"}}>{delRec.invoice}</strong> ({delRec.cliente})?</p>
+          <p style={{fontSize:12,color:"#DC2626",marginTop:8}}>⚠ Todos os containers associados serão removidos automaticamente (CASCADE).</p>
+          <div className="mac">
+            <button className="btn bg2" onClick={()=>setDelRec(null)}>Cancelar</button>
+            <button className="btn bd" onClick={()=>hDel(delRec.invoice)}>Excluir</button>
+          </div>
+        </div>
+      </div>
+    </div>}
+
+    {/* ── Modal containers ── */}
+    {contModal&&<ContainerModal invoice={contModal.invoice} invoiceId={contModal.id}
+      onClose={()=>setContModal(null)} notify={notify}/>}
+  </div>;
+}
+
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
