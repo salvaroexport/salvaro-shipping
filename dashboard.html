@@ -2747,7 +2747,7 @@ function BookingsSection({invoiceId,invoice,notify}){
   const [addingCont,setAddingCont]=useState(null); // bookingId que está adicionando container
   const [savingCont,setSavingCont]=useState(false);
 
-  const BE0={booking:"",ref_agente:"",navio:"",porto_carga:"IMBITUBA",destino:"",etd:"",eta:"",bl:"",status:"CARTEIRA"};
+  const BE0={booking:"",ref_agente:"",navio:"",etd:"",eta:"",bl:""};
   const [bform,setBform]=useState(BE0);
   const bu=(k,v)=>setBform(f=>({...f,[k]:v}));
 
@@ -2773,8 +2773,8 @@ function BookingsSection({invoiceId,invoice,notify}){
     if(!bform.booking){notify("Número do booking obrigatório","err");return;}
     setSaving(true);
     const payload={pellet_id:invoiceId,booking:bform.booking,ref_agente:bform.ref_agente||null,
-      navio:bform.navio||null,porto_carga:bform.porto_carga||null,destino:bform.destino||null,
-      etd:bform.etd||null,eta:bform.eta||null,bl:bform.bl||null,status:bform.status||"AGENDADO"};
+      navio:bform.navio||null,
+      etd:bform.etd||null,eta:bform.eta||null,bl:bform.bl||null};
     let error;
     if(editId)({error}=await db.from("pellets_bookings").update(payload).eq("id",editId));
     else({error}=await db.from("pellets_bookings").insert(payload));
@@ -2827,31 +2827,20 @@ function BookingsSection({invoiceId,invoice,notify}){
       <div style={{fontWeight:500,fontSize:12,color:"var(--text2)",marginBottom:10,textTransform:"uppercase",letterSpacing:"0.5px"}}>
         {editId?"✏️ Editar booking":"+ Adicionar booking"}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1.2fr 1.2fr 1.4fr 1fr 100px 110px 110px 100px auto",gap:8,alignItems:"end"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1.2fr 1.2fr 1.4fr 110px 110px 110px auto",gap:8,alignItems:"end"}}>
         {[
           {label:"Booking *",field:"booking"},
           {label:"Ref. Agente (EM...)",field:"ref_agente"},
           {label:"Navio",field:"navio"},
-          {label:"Destino",field:"destino"},
-          {label:"Porto",field:"porto_carga",opts:PORTOS_PELL},
           {label:"ETD",field:"etd",type:"date"},
           {label:"ETA",field:"eta",type:"date"},
           {label:"BL",field:"bl",type:"date"},
-        ].map(({label,field,type="text",opts})=>(
+        ].map(({label,field,type="text"})=>(
           <div key={field} className="field">
             <label>{label}</label>
-            {opts?<select value={bform[field]||""} onChange={e=>bu(field,e.target.value)}>
-                {opts.map(o=><option key={o}>{o}</option>)}
-              </select>
-            :<input type={type} value={bform[field]||""} onChange={e=>bu(field,e.target.value)}/>}
+            <input type={type} value={bform[field]||""} onChange={e=>bu(field,e.target.value)}/>
           </div>
         ))}
-        <div className="field">
-          <label>Status</label>
-          <select value={bform.status} onChange={e=>bu("status",e.target.value)}>
-            {STATUS_PELL.map(s=><option key={s}>{s}</option>)}
-          </select>
-        </div>
       </div>
       <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginTop:8}}>
         {editId&&<button className="btn bg2 bsm" onClick={()=>{setEditId(null);setBform(BE0);}}>Cancelar</button>}
@@ -2868,11 +2857,9 @@ function BookingsSection({invoiceId,invoice,notify}){
     {books.map((b,bi)=>{
       const conts=b.pellets_containers||[];
       const isOpen=expanded[b.id];
-      const st=PELL_CLR[b.status]||"bgg";
-
       return <div key={b.id} style={{border:"1px solid var(--border)",borderRadius:10,marginBottom:10,overflow:"hidden"}}>
         {/* Header do booking */}
-        <div style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr 1fr 90px auto",gap:10,padding:"10px 14px",background:"var(--bg3)",alignItems:"center",cursor:"pointer"}}
+        <div style={{display:"grid",gridTemplateColumns:"auto 1fr 1fr 1fr 60px auto",gap:10,padding:"10px 14px",background:"var(--bg3)",alignItems:"center",cursor:"pointer"}}
           onClick={()=>setExpanded(e=>({...e,[b.id]:!isOpen}))}>
           {/* Chevron */}
           <span style={{fontSize:14,color:"var(--text2)",transition:"transform .2s",display:"inline-block",transform:isOpen?"rotate(90deg)":"rotate(0deg)"}}>▶</span>
@@ -2892,11 +2879,9 @@ function BookingsSection({invoiceId,invoice,notify}){
           <div style={{fontSize:11,color:"var(--text2)"}}>
             <span style={{background:"#EDE9FE",color:"#7C3AED",padding:"2px 8px",borderRadius:8,fontWeight:600,fontSize:11}}>📦 {conts.length}</span>
           </div>
-          {/* Status */}
-          <span className={"badge "+st} style={{fontSize:10}}>{b.status}</span>
           {/* Ações */}
           <div style={{display:"flex",gap:4}} onClick={e=>e.stopPropagation()}>
-            <button className="btn bsm" style={{fontSize:10}} onClick={()=>{setEditId(b.id);setBform({booking:b.booking,ref_agente:b.ref_agente||"",navio:b.navio||"",porto_carga:b.porto_carga||"IMBITUBA",destino:b.destino||"",etd:b.etd||"",eta:b.eta||"",bl:b.bl||"",status:b.status||"AGENDADO"});setExpanded(e=>({...e,[b.id]:false}));}}>✏️</button>
+            <button className="btn bsm" style={{fontSize:10}} onClick={()=>{setEditId(b.id);setBform({booking:b.booking,ref_agente:b.ref_agente||"",navio:b.navio||"",etd:b.etd||"",eta:b.eta||"",bl:b.bl||""});setExpanded(e=>({...e,[b.id]:false}));}}>✏️</button>
             <button className="btn bsm" style={{fontSize:10,color:"#DC2626"}} onClick={()=>removeBook(b.id)}>🗑️</button>
           </div>
         </div>
@@ -2905,8 +2890,6 @@ function BookingsSection({invoiceId,invoice,notify}){
         {isOpen&&<div style={{padding:"12px 14px",borderTop:"1px solid var(--border)"}}>
           {/* Info extra do booking */}
           <div style={{display:"flex",gap:16,fontSize:11,color:"var(--text2)",marginBottom:12,flexWrap:"wrap"}}>
-            <span><strong>Porto:</strong> {b.porto_carga||"—"}</span>
-            <span><strong>Destino:</strong> {b.destino||"—"}</span>
             <span><strong>BL:</strong> {b.bl?fmtDate(b.bl):"—"}</span>
           </div>
 
