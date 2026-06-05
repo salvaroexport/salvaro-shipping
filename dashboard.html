@@ -2615,12 +2615,12 @@ const PellField=({label,field,type="text",opts=null,form,upd,span=1})=>(
   </div>
 );
 const STATUS_PELL=["CARTEIRA","EM PRODUÇÃO","AGD ESTUFAGEM","NO PORTO","EMBARCADO","ENTREGUE","SINISTRO","CANCELADO"];
-const STATUS_BOOK=["AGENDADO","CONFIRMADO","NO PORTO","EMBARCADO","BL EMITIDO","CANCELADO"];
+
 const PAISES_PELL=["ALEMANHA","ÁUSTRIA","BÉLGICA","DINAMARCA","ESPANHA","ESTADOS UNIDOS","FINLÂNDIA","FRANÇA","HOLANDA","INGLATERRA","ITÁLIA","NORUEGA","POLÔNIA","PORTUGAL","SUÉCIA","OUTROS"];
 const PORTOS_PELL=["IMBITUBA","ITAJAI","PARANAGUÁ","SANTOS","ITAPOA","NAVEGANTES"];
 const COND_PGTO_OPTS=["80/20","100% antecipado","50/50","30/70","70/30","Outro"];
 const PELL_CLR={"CARTEIRA":"bgcart","EM PRODUÇÃO":"bgprod","AGD ESTUFAGEM":"bgy","NO PORTO":"bgo","EMBARCADO":"bgb","ENTREGUE":"bge","SINISTRO":"bgr","CANCELADO":"bgr"};
-const BOOK_CLR={"AGENDADO":"bgy","CONFIRMADO":"bgcart","NO PORTO":"bgo","EMBARCADO":"bgb","BL EMITIDO":"bge","CANCELADO":"bgr"};
+
 
 /* ── SEÇÃO PAGAMENTOS (inline no modal) ─── */
 function PagamentosSection({invoiceId,valorTotal,condPgto,etdPrevisto,notify}){
@@ -2747,7 +2747,7 @@ function BookingsSection({invoiceId,invoice,notify}){
   const [addingCont,setAddingCont]=useState(null); // bookingId que está adicionando container
   const [savingCont,setSavingCont]=useState(false);
 
-  const BE0={booking:"",ref_agente:"",navio:"",porto_carga:"IMBITUBA",destino:"",etd:"",eta:"",bl:"",status:"AGENDADO"};
+  const BE0={booking:"",ref_agente:"",navio:"",porto_carga:"IMBITUBA",destino:"",etd:"",eta:"",bl:"",status:"CARTEIRA"};
   const [bform,setBform]=useState(BE0);
   const bu=(k,v)=>setBform(f=>({...f,[k]:v}));
 
@@ -2763,6 +2763,8 @@ function BookingsSection({invoiceId,invoice,notify}){
       .eq("pellet_id",invoiceId)
       .order("created_at");
     setBooks(data||[]);
+    // Auto-expand if only 1 booking
+    if(data&&data.length===1) setExpanded(e=>({...e,[data[0].id]:true}));
     setLoading(false);
   }
   useEffect(()=>{if(invoiceId)load();},[invoiceId]);
@@ -2806,6 +2808,7 @@ function BookingsSection({invoiceId,invoice,notify}){
     if(error){notify("Erro: "+error.message,"err");return;}
     setCform(CE0);setEditContIdx(null);setAddingCont(null);
     await load();notify("Container salvo");
+    // keep expanded state
   }
 
   async function removeCont(id){
@@ -2846,7 +2849,7 @@ function BookingsSection({invoiceId,invoice,notify}){
         <div className="field">
           <label>Status</label>
           <select value={bform.status} onChange={e=>bu("status",e.target.value)}>
-            {STATUS_BOOK.map(s=><option key={s}>{s}</option>)}
+            {STATUS_PELL.map(s=><option key={s}>{s}</option>)}
           </select>
         </div>
       </div>
@@ -2865,7 +2868,7 @@ function BookingsSection({invoiceId,invoice,notify}){
     {books.map((b,bi)=>{
       const conts=b.pellets_containers||[];
       const isOpen=expanded[b.id];
-      const st=BOOK_CLR[b.status]||"bgg";
+      const st=PELL_CLR[b.status]||"bgg";
 
       return <div key={b.id} style={{border:"1px solid var(--border)",borderRadius:10,marginBottom:10,overflow:"hidden"}}>
         {/* Header do booking */}
@@ -3256,20 +3259,17 @@ function PgPell({notify,session}){
           {/* ── ABA DADOS GERAIS ── */}
           {modalTab==="dados"&&<>
             <div className="st">Identificação</div>
-            <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr 1.5fr 1fr 1fr",gap:12,marginBottom:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr 1.5fr",gap:12,marginBottom:16}}>
               <PellField label="Invoice *" field="invoice" form={form} upd={upd}/>
               <PellField label="Mês Ref" field="mes_ref" opts={ALL_MONTHS} form={form} upd={upd}/>
               <PellField label="Cliente" field="cliente" opts={clientes.length?clientes:undefined} form={form} upd={upd}/>
-              <PellField label="PO#" field="po" form={form} upd={upd}/>
-              <PellField label="NF Fiscal" field="nf_fiscal" form={form} upd={upd}/>
             </div>
             <hr className="dv"/>
             <div className="st">Produto</div>
-            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:12,marginBottom:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:12,marginBottom:16}}>
               <PellField label="Produto / Especificação" field="produto" form={form} upd={upd}/>
               <PellField label="Peso Total (ton)" field="peso_ton" type="number" form={form} upd={upd}/>
               <PellField label="Lote" field="lote" form={form} upd={upd}/>
-              <PellField label="Certificado / Análise" field="certificado" form={form} upd={upd}/>
             </div>
             <hr className="dv"/>
             <div className="st">Logística</div>
@@ -3281,12 +3281,10 @@ function PgPell({notify,session}){
             </div>
             <hr className="dv"/>
             <div className="st">Financeiro e Pagamento</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:12,marginBottom:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}}>
               <PellField label="Valor EUR" field="valor_eur" type="number" form={form} upd={upd}/>
               <PellField label="Cond. Pagamento" field="cond_pgto" opts={COND_PGTO_OPTS} form={form} upd={upd}/>
-              <PellField label="DL Carga" field="dl_carga" type="date" form={form} upd={upd}/>
               <PellField label="Status" field="status" opts={STATUS_PELL} form={form} upd={upd}/>
-              <PellField label="Status Doc" field="status_doc" opts={STATUS_DOC} form={form} upd={upd}/>
             </div>
             {form.obs!==undefined&&<div className="field" style={{marginBottom:16}}>
               <label>Observações</label>
