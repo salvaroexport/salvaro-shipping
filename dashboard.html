@@ -802,19 +802,24 @@ function App() {
       setAuthChecking(false);
     });
     const {data:{subscription}} = db.auth.onAuthStateChange((event, sess)=>{
-      /* Só reage a login/logout real — ignora TOKEN_REFRESHED para não disparar reload */
-      if(event==="SIGNED_IN"||event==="SIGNED_OUT"||event==="USER_UPDATED"||event==="INITIAL_SESSION"){
+      if(event==="INITIAL_SESSION"){
+        /* Sessão inicial: atualiza session E libera o authChecking juntos */
         setSession(sess);
+        setAuthChecking(false);
+      } else if(event==="SIGNED_IN"||event==="USER_UPDATED"){
+        setSession(sess);
+      } else if(event==="SIGNED_OUT"){
+        setSession(null);
       }
     });
     return ()=>subscription.unsubscribe();
   },[]);
 
-  /* Carregar dados quando session muda (login/logout) */
+  /* Carregar dados quando session ou authChecking mudam */
   useEffect(()=>{
-    if(session) load();
-    else setRecs(HIST_RECS);
-  },[session]);
+    if(!authChecking && session) load();
+    else if(!authChecking && !session) setRecs(HIST_RECS);
+  },[session, authChecking]);
 
   /* Carga inicial: mostra spinner durante a primeira requisição */
   async function load() {
