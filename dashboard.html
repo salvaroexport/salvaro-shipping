@@ -1057,6 +1057,53 @@ function PgDash({recs, yr, setYr}) {
     return Object.entries(m).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}));
   },[fil]);
 
+  /* Margem bruta por cliente (fat - frete) */
+  const byCliMargem=useMemo(()=>{
+    const mf={},mr={};
+    fil.forEach(r=>{
+      const c=r.cliente||"—";
+      mf[c]=(mf[c]||0)+(r.valor_usd||0);
+      mr[c]=(mr[c]||0)+(r.frete_usd||0);
+    });
+    return Object.entries(mf).sort(([,a],[,b])=>b-a).map(([l,fat])=>({
+      l,
+      fat,
+      fret:mr[l]||0,
+      margem:fat-(mr[l]||0),
+      pctMargem:fat>0?((fat-(mr[l]||0))/fat*100):null
+    }));
+  },[fil]);
+
+  /* Concentração rolling 12 meses */
+  const concentracao=useMemo(()=>{
+    const hoje=new Date();
+    const limite=new Date(hoje.getFullYear()-1,hoje.getMonth(),1);
+    const r12=recs.filter(r=>{
+      if(!r.mes_ref) return false;
+      const [m,y]=r.mes_ref.split(" ");
+      const meses=["JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
+      const mi=meses.indexOf(m.toUpperCase());
+      if(mi===-1||!y) return false;
+      const d=new Date(parseInt(y),mi,1);
+      return d>=limite;
+    });
+    const tot=r12.reduce((s,r)=>s+(r.valor_usd||0),0);
+    if(!tot) return [];
+    const mc={};
+    r12.forEach(r=>{const c=r.cliente||"—";mc[c]=(mc[c]||0)+(r.valor_usd||0);});
+    return Object.entries(mc)
+      .map(([c,v])=>({c,v,pct:v/tot*100}))
+      .sort((a,b)=>b.pct-a.pct);
+  },[recs]);
+
+  /* Semáforo: maior concentração */
+  const maxConc=concentracao.length>0?concentracao[0]:null;
+  function semaforo(pct){
+    if(pct>=30) return {cor:"#DC2626",bg:"#FEE2E2",label:"Crítico",icon:"⚠"};
+    if(pct>=20) return {cor:"#D97706",bg:"#FEF3C7",label:"Atenção",icon:"◉"};
+    return {cor:"#059669",bg:"#DCFCE7",label:"Normal",icon:"●"};
+  }
+
   const byDst=useMemo(()=>{
     const m={};fil.forEach(r=>{const d=r.destino||"—";m[d]=(m[d]||0)+1;});
     return Object.entries(m).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}));
@@ -1094,6 +1141,18 @@ function PgDash({recs, yr, setYr}) {
       <div className="kp"><div className="kl">Média / CNTR</div><div className="kv gc" style={{fontSize:20}}>{fmtUSD(cnt?fat/cnt:0)}</div><YoY cur={cnt?fat/cnt:0} prev={cntPrev?fatPrev/cntPrev:0}/></div>
       <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(fret)}</div><div className="ks">{fat?((fret/fat)*100).toFixed(1)+"%":"—"} do fat.</div><YoY cur={fret} prev={fretPrev} invert={true}/></div>
       <div className="kp"><div className="kl">Clientes</div><div className="kv gr">{byCli.length}</div><div className="ks">no período</div></div>
+      <div className="kp">
+        <div className="kl">Margem Bruta</div>
+        <div className="kv" style={{fontSize:18,color:"#059669"}}>{fmtUSD(fil.reduce((s,r)=>s+(r.valor_usd||0)-(r.frete_usd||0),0))}</div>
+        <div className="ks">{fat>0?((fil.reduce((s,r)=>s+(r.valor_usd||0)-(r.frete_usd||0),0)/fat)*100).toFixed(1)+"% do fat.":"—"}</div>
+      </div>
+      {maxConc&&(()=>{const sm=semaforo(maxConc.pct);return(
+        <div className="kp" style={{borderLeft:"3px solid "+sm.cor,background:sm.bg+"40"}}>
+          <div className="kl" style={{color:sm.cor}}>{sm.icon} Concentração {sm.label}</div>
+          <div className="kv" style={{fontSize:20,color:sm.cor}}>{maxConc.c}</div>
+          <div className="ks" style={{color:sm.cor,fontWeight:600}}>{maxConc.pct.toFixed(1)}% dos últ. 12m</div>
+        </div>
+      );})()}
       <PellKpi/>
     </div>
     {yr==="TODOS" ? <>
@@ -1104,6 +1163,104 @@ function PgDash({recs, yr, setYr}) {
       <div className="g2 mb20">
         <div className="card"><div className="ct">Faturamento por Cliente</div><Bar data={byCli} color="#D97706" fmt={v=>"$"+Math.round(v/1000)+"k"} total={fat}/></div>
         <div className="card"><div className="ct">Destinos (containers)</div><Donut data={byDst}/></div>
+      </div>
+      <div className="g2 mb20">
+        <div className="card">
+          <div className="ct">Margem bruta por cliente</div>
+          <div style={{marginTop:8}}>
+            {byCliMargem.map((c,i)=>{
+              const sm=c.pctMargem!=null?semaforo(0):null;
+              return <div key={i} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                  <span style={{fontWeight:500}}>{c.l}</span>
+                  <span style={{color:"var(--text2)"}}>{fmtUSD(c.margem)} <span style={{color:"#059669",fontWeight:600}}>({c.pctMargem!=null?c.pctMargem.toFixed(1)+"%":"—"})</span></span>
+                </div>
+                <div style={{display:"flex",gap:2,height:8,borderRadius:4,overflow:"hidden"}}>
+                  <div style={{width:(c.fat>0?(c.margem/c.fat*100):0)+"%",background:"#059669",transition:"width .4s"}}/>
+                  <div style={{flex:1,background:"#FCA5A5"}}/>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text3)",marginTop:2}}>
+                  <span>Margem: {fmtUSD(c.margem)}</span>
+                  <span>Frete: {fmtUSD(c.fret)}</span>
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>
+        <div className="card">
+          <div className="ct">Concentração de clientes — últ. 12 meses</div>
+          <div style={{marginTop:8}}>
+            {concentracao.map((c,i)=>{
+              const sm=semaforo(c.pct);
+              return <div key={i} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                  <span style={{fontSize:12,fontWeight:500}}>{c.c}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,fontWeight:700,color:sm.cor}}>{c.pct.toFixed(1)}%</span>
+                    <span style={{fontSize:10,background:sm.bg,color:sm.cor,padding:"1px 7px",borderRadius:8,fontWeight:600}}>{sm.label}</span>
+                  </div>
+                </div>
+                <div style={{height:8,background:"var(--bg3)",borderRadius:4}}>
+                  <div style={{height:8,background:sm.cor,borderRadius:4,width:Math.min(c.pct,100)+"%",transition:"width .4s"}}/>
+                </div>
+              </div>;
+            })}
+            <div style={{marginTop:12,padding:"8px 12px",background:"var(--bg3)",borderRadius:8,fontSize:11,color:"var(--text2)"}}>
+              <strong>Limites:</strong> 🟢 &lt;20% normal · 🟡 20–30% atenção · 🔴 &gt;30% crítico
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="g2 mb20">
+      </div>
+      <div className="g2 mb20">
+        <div className="card">
+          <div className="ct">Margem bruta por cliente</div>
+          <div style={{marginTop:8}}>
+            {byCliMargem.map((c,i)=>{
+              const sm=c.pctMargem!=null?semaforo(0):null;
+              return <div key={i} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                  <span style={{fontWeight:500}}>{c.l}</span>
+                  <span style={{color:"var(--text2)"}}>{fmtUSD(c.margem)} <span style={{color:"#059669",fontWeight:600}}>({c.pctMargem!=null?c.pctMargem.toFixed(1)+"%":"—"})</span></span>
+                </div>
+                <div style={{display:"flex",gap:2,height:8,borderRadius:4,overflow:"hidden"}}>
+                  <div style={{width:(c.fat>0?(c.margem/c.fat*100):0)+"%",background:"#059669",transition:"width .4s"}}/>
+                  <div style={{flex:1,background:"#FCA5A5"}}/>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text3)",marginTop:2}}>
+                  <span>Margem: {fmtUSD(c.margem)}</span>
+                  <span>Frete: {fmtUSD(c.fret)}</span>
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>
+        <div className="card">
+          <div className="ct">Concentração de clientes — últ. 12 meses</div>
+          <div style={{marginTop:8}}>
+            {concentracao.map((c,i)=>{
+              const sm=semaforo(c.pct);
+              return <div key={i} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                  <span style={{fontSize:12,fontWeight:500}}>{c.c}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,fontWeight:700,color:sm.cor}}>{c.pct.toFixed(1)}%</span>
+                    <span style={{fontSize:10,background:sm.bg,color:sm.cor,padding:"1px 7px",borderRadius:8,fontWeight:600}}>{sm.label}</span>
+                  </div>
+                </div>
+                <div style={{height:8,background:"var(--bg3)",borderRadius:4}}>
+                  <div style={{height:8,background:sm.cor,borderRadius:4,width:Math.min(c.pct,100)+"%",transition:"width .4s"}}/>
+                </div>
+              </div>;
+            })}
+            <div style={{marginTop:12,padding:"8px 12px",background:"var(--bg3)",borderRadius:8,fontSize:11,color:"var(--text2)"}}>
+              <strong>Limites:</strong> 🟢 &lt;20% normal · 🟡 20–30% atenção · 🔴 &gt;30% crítico
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="g2 mb20">
       </div>
     </> : <>
       <div className="g2 mb20">
