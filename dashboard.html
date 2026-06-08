@@ -1074,18 +1074,36 @@ function PgDash({recs, yr, setYr}) {
     }));
   },[fil]);
 
-  /* Concentração rolling 12 meses */
+  /* Concentração rolling 12 meses — imune ao filtro yr */
   const concentracao=useMemo(()=>{
     const hoje=new Date();
     const limite=new Date(hoje.getFullYear()-1,hoje.getMonth(),1);
+    const MESES_PT=["JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
+    const MESES_FULL=["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];
+
+    function parseMesRef(mr){
+      if(!mr) return null;
+      const parts=mr.trim().split(/[\s\/\-]+/);
+      if(parts.length<2) return null;
+      // Tenta "MMM YYYY" ou "MMMM YYYY" ou "MM YYYY"
+      let mi=-1, yi=-1;
+      // Se primeiro token é numérico → formato MM/YYYY
+      if(/^\d+$/.test(parts[0])){
+        mi=parseInt(parts[0])-1;
+        yi=parseInt(parts[1]);
+      } else {
+        const tok=parts[0].toUpperCase().replace(/[^A-Z]/g,"");
+        mi=MESES_PT.findIndex(m=>tok.startsWith(m));
+        if(mi===-1) mi=MESES_FULL.findIndex(m=>tok.startsWith(m.substring(0,3)));
+        yi=parseInt(parts[1]);
+      }
+      if(mi<0||mi>11||isNaN(yi)) return null;
+      return new Date(yi,mi,1);
+    }
+
     const r12=recs.filter(r=>{
-      if(!r.mes_ref) return false;
-      const [m,y]=r.mes_ref.split(" ");
-      const meses=["JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
-      const mi=meses.indexOf(m.toUpperCase());
-      if(mi===-1||!y) return false;
-      const d=new Date(parseInt(y),mi,1);
-      return d>=limite;
+      const d=parseMesRef(r.mes_ref);
+      return d&&d>=limite;
     });
     const tot=r12.reduce((s,r)=>s+(r.valor_usd||0),0);
     if(!tot) return [];
