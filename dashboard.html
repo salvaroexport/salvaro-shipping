@@ -969,7 +969,7 @@ function App() {
               {pg==="base" && <PgBase recs={recs} onSave={save} onDel={remove} notify={notify} q={baseQ} setQ={setBaseQ} fC={baseFC} setFC={setBaseFC} fM={baseFM} setFM={setBaseFM} fD={baseFD} setFD={setBaseFD} cadData={cadData}/>}
               {pg==="cad"  && <PgCad  cadData={cadData} refreshCad={loadCadastros} notify={notify}/>}
               {pg==="pell" && <PgPell notify={notify} session={session}/>}
-              {pg==="rel"  && <PgRel  recs={recs} tab={relTab} setTab={setRelTab} yr={relYr} setYr={setRelYr} mes={relMes} setMes={setRelMes}/>}
+              {pg==="rel"  && <PgRel  recs={recs} tab={relTab} setTab={setRelTab} yr={relYr} setYr={setRelYr} mes={relMes} setMes={setRelMes} notify={notify}/>}
             </>
         }
       </main>
@@ -2350,7 +2350,7 @@ function PgCad({cadData, refreshCad, notify}) {
 /* ══════════════════════════════════════════
    RELATÓRIOS
 ══════════════════════════════════════════ */
-function PgRel({recs, tab, setTab, yr, setYr, mes, setMes}) {
+function PgRel({recs, tab, setTab, yr, setYr, mes, setMes, notify}) {
   const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
 
   const monthly=useMemo(()=>{
@@ -2482,7 +2482,7 @@ function PgRel({recs, tab, setTab, yr, setYr, mes, setMes}) {
   return <div className="page">
     <div className="ph"><h2>Relatórios</h2><p>Relatórios mensais e anuais com exportação CSV e Excel</p></div>
     <div className="tabs">
-      {[["mensal","Mensal"],["anual","Anual"],["geral","Geral"]].map(([id,lb])=>(
+      {[["mensal","Mensal"],["anual","Anual"],["geral","Geral"],["pellets","🌲 Pellets"]].map(([id,lb])=>(
         <div key={id} className={`tab${tab===id?" on":""}`} onClick={()=>setTab(id)}>{lb}</div>
       ))}
     </div>
@@ -2585,9 +2585,183 @@ function PgRel({recs, tab, setTab, yr, setYr, mes, setMes}) {
         <Bar data={Object.entries(recs.reduce((a,r)=>{const c=r.cliente||"—";a[c]=(a[c]||0)+(r.valor_usd||0);return a},{})).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}))} color="#7C3AED" fmt={v=>"$"+Math.round(v/1000)+"k"}/>
       </div>
     </>}
+    {tab==="pellets"&&<PelletRel notify={notify}/>}
   </div>;
 }
 
+
+/* ── RELATÓRIO PELLETS ─── */
+function PelletRel({notify}){
+  const [rows,setRows]=useState([]);
+  const [loading,setLoading]=useState(false);
+  const [anos,setAnos]=useState([]);
+  const [meses,setMeses]=useState([]);
+  const [filtroAno,setFiltroAno]=useState("todos");
+  const [filtroMes,setFiltroMes]=useState("todos");
+
+  useEffect(()=>{
+    setLoading(true);
+    db.from("pellets_exportacoes")
+      .select("cliente,valor_eur,peso_ton,mes_ref,status")
+      .neq("status","CANCELADO")
+      .then(({data,error})=>{
+        if(error){notify&&notify("Erro ao carregar pellets","err");setLoading(false);return;}
+        const d=data||[];
+        setRows(d);
+        // Anos disponíveis a partir de mes_ref (formato "MMM YYYY")
+        const aSet=new Set();
+        const mSet=new Set();
+        d.forEach(r=>{
+          if(r.mes_ref){
+            const parts=r.mes_ref.split(" ");
+            if(parts.length===2){aSet.add(parts[1]);mSet.add(r.mes_ref);}
+          }
+        });
+        setAnos(["todos",...[...aSet].sort().reverse()]);
+        setMeses(["todos",...[...mSet].sort().reverse()]);
+        setLoading(false);
+      });
+  },[]);
+
+  // Filtrar
+  const filtered=useMemo(()=>{
+    return rows.filter(r=>{
+      if(filtroMes!=="todos") return r.mes_ref===filtroMes;
+      if(filtroAno!=="todos"){
+        const parts=(r.mes_ref||"").split(" ");
+        return parts[1]===filtroAno;
+      }
+      return true;
+    });
+  },[rows,filtroAno,filtroMes]);
+
+  // Agregação por cliente
+  const porCliente=useMemo(()=>{
+    const m={};
+    filtered.forEach(r=>{
+      const c=r.cliente||"—";
+      if(!m[c]) m[c]={cliente:c,fat:0,peso:0,cnt:0};
+      m[c].fat  += parseFloat(r.valor_eur)||0;
+      m[c].peso += parseFloat(r.peso_ton)||0;
+      m[c].cnt  += 1;
+    });
+    return Object.values(m)
+      .map(c=>({...c, pmt: c.peso>0? c.fat/c.peso : null}))
+      .sort((a,b)=>b.fat-a.fat);
+  },[filtered]);
+
+  // Totais
+  const totais=useMemo(()=>({
+    fat  : porCliente.reduce((s,c)=>s+c.fat,0),
+    peso : porCliente.reduce((s,c)=>s+c.peso,0),
+    cnt  : porCliente.reduce((s,c)=>s+c.cnt,0),
+    pmt  : (()=>{
+      const tf=porCliente.reduce((s,c)=>s+c.fat,0);
+      const tp=porCliente.reduce((s,c)=>s+c.peso,0);
+      return tp>0?tf/tp:null;
+    })(),
+  }),[porCliente]);
+
+  const fmtPmt=v=>v!=null?new Intl.NumberFormat("de-DE",{style:"currency",currency:"EUR",minimumFractionDigits:2}).format(v)+"/t":"—";
+
+  if(loading) return <div className="lw"><div className="spin2"/></div>;
+
+  return <div>
+    {/* Filtros */}
+    <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
+      <select className="sel" value={filtroAno} onChange={e=>{setFiltroAno(e.target.value);setFiltroMes("todos");}}>
+        {anos.map(a=><option key={a} value={a}>{a==="todos"?"Todos os anos":a}</option>)}
+      </select>
+      <select className="sel" value={filtroMes} onChange={e=>{setFiltroMes(e.target.value);if(e.target.value!=="todos")setFiltroAno("todos");}}>
+        {meses.map(m=><option key={m} value={m}>{m==="todos"?"Todos os meses":m}</option>)}
+      </select>
+      {(filtroAno!=="todos"||filtroMes!=="todos")&&
+        <button className="btn bsm bg2" onClick={()=>{setFiltroAno("todos");setFiltroMes("todos");}}>✕ Limpar</button>}
+      <span style={{fontSize:12,color:"var(--text2)",marginLeft:4}}>{filtered.length} invoice{filtered.length!==1?"s":""}</span>
+    </div>
+
+    {/* Cards totais */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
+      {[
+        {l:"Faturamento Total",v:fmtEUR2(totais.fat),c:"#7C3AED"},
+        {l:"Volume Total",v:fmtTon(totais.peso),c:"var(--gold)"},
+        {l:"Preço Médio Geral",v:fmtPmt(totais.pmt),c:"var(--blue)"},
+        {l:"Invoices",v:totais.cnt,c:"var(--text2)"},
+      ].map((k,i)=>(
+        <div key={i} className="kp" style={{borderLeft:`3px solid ${k.c}`}}>
+          <div className="kl" style={{color:k.c}}>{k.l}</div>
+          <div className="kv" style={{fontSize:16,color:k.c}}>{k.v}</div>
+        </div>
+      ))}
+    </div>
+
+    {/* Tabela por cliente */}
+    {porCliente.length===0
+      ? <div className="empty">Nenhum dado para o período selecionado</div>
+      : <div className="card">
+          <div className="ct" style={{marginBottom:12}}>Por Cliente</div>
+          <div className="tw"><table>
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th className="r">Invoices</th>
+                <th className="r">Volume (ton)</th>
+                <th className="r">Faturamento (EUR)</th>
+                <th className="r">Part. Faturamento</th>
+                <th className="r">Preço Médio (€/t)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {porCliente.map((c,i)=>{
+                const pctFat=totais.fat>0?c.fat/totais.fat*100:0;
+                return <tr key={c.cliente}>
+                  <td><strong>{c.cliente}</strong></td>
+                  <td className="r" style={{color:"var(--text2)"}}>{c.cnt}</td>
+                  <td className="r" style={{fontVariantNumeric:"tabular-nums"}}>{fmtTon(c.peso)}</td>
+                  <td className="r" style={{fontVariantNumeric:"tabular-nums",color:"#7C3AED",fontWeight:500}}>{fmtEUR2(c.fat)}</td>
+                  <td className="r">
+                    <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>
+                      <div style={{width:60,height:6,background:"var(--bg3)",borderRadius:3,overflow:"hidden"}}>
+                        <div style={{width:pctFat+"%",height:6,background:"#7C3AED",borderRadius:3}}/>
+                      </div>
+                      <span style={{fontSize:12,fontWeight:600,color:"var(--text2)",minWidth:36,textAlign:"right"}}>{pctFat.toFixed(1)}%</span>
+                    </div>
+                  </td>
+                  <td className="r" style={{fontVariantNumeric:"tabular-nums",fontWeight:600,color:"var(--blue)"}}>{fmtPmt(c.pmt)}</td>
+                </tr>;
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{borderTop:"2px solid var(--border)"}}>
+                <td><strong>TOTAL</strong></td>
+                <td className="r" style={{fontWeight:600}}>{totais.cnt}</td>
+                <td className="r" style={{fontWeight:600}}>{fmtTon(totais.peso)}</td>
+                <td className="r" style={{fontWeight:700,color:"#7C3AED"}}>{fmtEUR2(totais.fat)}</td>
+                <td className="r" style={{fontWeight:600}}>100%</td>
+                <td className="r" style={{fontWeight:700,color:"var(--blue)"}}>{fmtPmt(totais.pmt)}</td>
+              </tr>
+            </tfoot>
+          </table></div>
+
+          {/* Barra de participação visual */}
+          <div style={{marginTop:16}}>
+            <div style={{fontSize:11,fontWeight:600,color:"var(--text2)",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.5px"}}>Participação no volume (ton)</div>
+            {porCliente.map(c=>{
+              const pctPeso=totais.peso>0?c.peso/totais.peso*100:0;
+              return <div key={c.cliente} style={{marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                  <span style={{fontWeight:500}}>{c.cliente}</span>
+                  <span style={{color:"var(--text2)"}}>{fmtTon(c.peso)} <span style={{color:"var(--gold)",fontWeight:600}}>({pctPeso.toFixed(1)}%)</span> · <span style={{color:"var(--blue)"}}>{fmtPmt(c.pmt)}</span></span>
+                </div>
+                <div style={{height:8,background:"var(--bg3)",borderRadius:4}}>
+                  <div style={{height:8,background:"var(--gold)",borderRadius:4,width:pctPeso+"%",transition:"width .4s"}}/>
+                </div>
+              </div>;
+            })}
+          </div>
+        </div>}
+  </div>;
+}
 
 /* ── PELLET KPI ─── */
 function PellKpi() {
