@@ -801,16 +801,28 @@ function App() {
       setSession(data.session);
       setAuthChecking(false);
     });
-    const {data:{subscription}} = db.auth.onAuthStateChange((_event, sess)=>{
-      setSession(sess);
+    const {data:{subscription}} = db.auth.onAuthStateChange((event, sess)=>{
+      /* Só reage a login/logout real — ignora TOKEN_REFRESHED para não disparar reload */
+      if(event==="SIGNED_IN"||event==="SIGNED_OUT"||event==="USER_UPDATED"){
+        setSession(sess);
+      }
     });
     return ()=>subscription.unsubscribe();
   },[]);
 
-  /* Carregar dados sempre que houver sessão válida */
+  /* Carregar dados apenas no login inicial — não recarrega a cada refresh de token */
+  const loadedUid = React.useRef(null);
   useEffect(()=>{
-    if(session) load();
-    else setRecs(HIST_RECS);  /* sem sessão, mantém apenas histórico em memória (não há leitura do banco) */
+    if(session){
+      const uid = session.user?.id;
+      if(uid && uid !== loadedUid.current){
+        loadedUid.current = uid;
+        load();
+      }
+    } else {
+      loadedUid.current = null;
+      setRecs(HIST_RECS);
+    }
   },[session]);
 
   /* Carga inicial: mostra spinner durante a primeira requisição */
