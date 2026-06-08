@@ -803,38 +803,18 @@ function App() {
     });
     const {data:{subscription}} = db.auth.onAuthStateChange((event, sess)=>{
       /* Só reage a login/logout real — ignora TOKEN_REFRESHED para não disparar reload */
-      if(event==="SIGNED_IN"||event==="SIGNED_OUT"||event==="USER_UPDATED"){
+      if(event==="SIGNED_IN"||event==="SIGNED_OUT"||event==="USER_UPDATED"||event==="INITIAL_SESSION"){
         setSession(sess);
       }
     });
     return ()=>subscription.unsubscribe();
   },[]);
 
-  /* Carregar dados no login — não recarrega a cada refresh de token */
-  const loadedUid = React.useRef(null);
-  const dataLoaded = React.useRef(false);
+  /* Carregar dados quando session muda (login/logout) */
   useEffect(()=>{
-    if(session){
-      const uid = session.user?.id;
-      if(uid && (uid !== loadedUid.current || !dataLoaded.current)){
-        loadedUid.current = uid;
-        dataLoaded.current = true;
-        load();
-      }
-    } else {
-      loadedUid.current = null;
-      dataLoaded.current = false;
-      setRecs(HIST_RECS);
-    }
+    if(session) load();
+    else setRecs(HIST_RECS);
   },[session]);
-
-  /* Forçar load se sessão já existe no mount (evita dependência de mudança de session) */
-  useEffect(()=>{
-    if(session && !dataLoaded.current){
-      dataLoaded.current = true;
-      load();
-    }
-  },[]);
 
   /* Carga inicial: mostra spinner durante a primeira requisição */
   async function load() {
