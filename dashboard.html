@@ -1211,57 +1211,6 @@ function PgDash({recs, yr, setYr}) {
           </div>
         </div>
       </div>
-      <div className="g2 mb20">
-      </div>
-      <div className="g2 mb20">
-        <div className="card">
-          <div className="ct">Margem bruta por cliente</div>
-          <div style={{marginTop:8}}>
-            {byCliMargem.map((c,i)=>{
-              const sm=c.pctMargem!=null?semaforo(0):null;
-              return <div key={i} style={{marginBottom:10}}>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
-                  <span style={{fontWeight:500}}>{c.l}</span>
-                  <span style={{color:"var(--text2)"}}>{fmtUSD(c.margem)} <span style={{color:"#059669",fontWeight:600}}>({c.pctMargem!=null?c.pctMargem.toFixed(1)+"%":"—"})</span></span>
-                </div>
-                <div style={{display:"flex",gap:2,height:8,borderRadius:4,overflow:"hidden"}}>
-                  <div style={{width:(c.fat>0?(c.margem/c.fat*100):0)+"%",background:"#059669",transition:"width .4s"}}/>
-                  <div style={{flex:1,background:"#FCA5A5"}}/>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text3)",marginTop:2}}>
-                  <span>Margem: {fmtUSD(c.margem)}</span>
-                  <span>Frete: {fmtUSD(c.fret)}</span>
-                </div>
-              </div>;
-            })}
-          </div>
-        </div>
-        <div className="card">
-          <div className="ct">Concentração de clientes — últ. 12 meses</div>
-          <div style={{marginTop:8}}>
-            {concentracao.map((c,i)=>{
-              const sm=semaforo(c.pct);
-              return <div key={i} style={{marginBottom:10}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                  <span style={{fontSize:12,fontWeight:500}}>{c.c}</span>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{fontSize:11,fontWeight:700,color:sm.cor}}>{c.pct.toFixed(1)}%</span>
-                    <span style={{fontSize:10,background:sm.bg,color:sm.cor,padding:"1px 7px",borderRadius:8,fontWeight:600}}>{sm.label}</span>
-                  </div>
-                </div>
-                <div style={{height:8,background:"var(--bg3)",borderRadius:4}}>
-                  <div style={{height:8,background:sm.cor,borderRadius:4,width:Math.min(c.pct,100)+"%",transition:"width .4s"}}/>
-                </div>
-              </div>;
-            })}
-            <div style={{marginTop:12,padding:"8px 12px",background:"var(--bg3)",borderRadius:8,fontSize:11,color:"var(--text2)"}}>
-              <strong>Limites:</strong> 🟢 &lt;20% normal · 🟡 20–30% atenção · 🔴 &gt;30% crítico
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="g2 mb20">
-      </div>
     </> : <>
       <div className="g2 mb20">
         <div className="card"><div className="ct">Faturamento por Mês</div><Bar data={byMonth} fmt={v=>"$"+Math.round(v/1000)+"k"}/></div>
@@ -1272,6 +1221,66 @@ function PgDash({recs, yr, setYr}) {
         <div className="card"><div className="ct">Status Documentação</div><Donut data={docSt}/></div>
       </div>
     </>}
+
+    {/* ── Margem bruta e Concentração — sempre visíveis ── */}
+    <div className="g2 mb20">
+      <div className="card">
+        <div className="ct">Margem bruta por cliente — {yr==="TODOS"?"todos os anos":yr}</div>
+        <div style={{marginTop:8}}>
+          {byCliMargem.length===0
+            ? <div className="empty">Sem dados</div>
+            : byCliMargem.map((c,i)=>{
+                const sm=semaforo(c.pctMargem!=null?0:0);
+                return <div key={i} style={{marginBottom:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                    <span style={{fontWeight:500}}>{c.l}</span>
+                    <span style={{color:"var(--text2)"}}>{fmtUSD(c.margem)} <span style={{color:"#059669",fontWeight:600}}>({c.pctMargem!=null?c.pctMargem.toFixed(1)+"%":"—"})</span></span>
+                  </div>
+                  <div style={{display:"flex",gap:2,height:8,borderRadius:4,overflow:"hidden"}}>
+                    <div style={{width:Math.max(0,Math.min(100,c.fat>0?c.margem/c.fat*100:0))+"%",background:"#059669",borderRadius:4,transition:"width .4s"}}/>
+                    <div style={{flex:1,background:"#FCA5A5",borderRadius:4}}/>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text3)",marginTop:2}}>
+                    <span>Faturamento: {fmtUSD(c.fat)}</span>
+                    <span style={{color:"#DC2626"}}>Frete: {fmtUSD(c.fret)}</span>
+                  </div>
+                </div>;
+              })
+          }
+          {byCliMargem.length>0&&<div style={{marginTop:10,padding:"8px 12px",background:"var(--bg3)",borderRadius:8,fontSize:11,color:"var(--text2)"}}>
+            <strong>Total período:</strong> Margem {fmtUSD(byCliMargem.reduce((s,c)=>s+c.margem,0))} · {fat>0?((byCliMargem.reduce((s,c)=>s+c.margem,0)/fat)*100).toFixed(1)+"% do faturamento":"—"}
+          </div>}
+        </div>
+      </div>
+      <div className="card">
+        <div className="ct">Concentração por cliente — últimos 12 meses</div>
+        <div style={{marginTop:8}}>
+          {concentracao.length===0
+            ? <div className="empty">Sem dados</div>
+            : concentracao.map((c,i)=>{
+                const sm=semaforo(c.pct);
+                return <div key={i} style={{marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                    <span style={{fontSize:13,fontWeight:500}}>{c.c}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:13,fontWeight:700,color:sm.cor}}>{c.pct.toFixed(1)}%</span>
+                      <span style={{fontSize:10,background:sm.bg,color:sm.cor,padding:"2px 8px",borderRadius:8,fontWeight:600}}>{sm.icon} {sm.label}</span>
+                    </div>
+                  </div>
+                  <div style={{height:10,background:"var(--bg3)",borderRadius:5}}>
+                    <div style={{height:10,background:sm.cor,borderRadius:5,width:Math.min(c.pct,100)+"%",transition:"width .5s"}}/>
+                  </div>
+                  <div style={{fontSize:10,color:"var(--text3)",marginTop:2}}>{fmtUSD(c.v)}</div>
+                </div>;
+              })
+          }
+          <div style={{marginTop:8,padding:"8px 12px",background:"var(--bg3)",borderRadius:8,fontSize:11,color:"var(--text2)"}}>
+            🟢 &lt;20% normal &nbsp;·&nbsp; 🟡 20–30% atenção &nbsp;·&nbsp; 🔴 &gt;30% crítico
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div className="card">
       <div className="ct">Histórico Anual (2015 – presente)</div>
       <div className="tw"><table>
