@@ -810,20 +810,31 @@ function App() {
     return ()=>subscription.unsubscribe();
   },[]);
 
-  /* Carregar dados apenas no login inicial — não recarrega a cada refresh de token */
+  /* Carregar dados no login — não recarrega a cada refresh de token */
   const loadedUid = React.useRef(null);
+  const dataLoaded = React.useRef(false);
   useEffect(()=>{
     if(session){
       const uid = session.user?.id;
-      if(uid && uid !== loadedUid.current){
+      if(uid && (uid !== loadedUid.current || !dataLoaded.current)){
         loadedUid.current = uid;
+        dataLoaded.current = true;
         load();
       }
     } else {
       loadedUid.current = null;
+      dataLoaded.current = false;
       setRecs(HIST_RECS);
     }
   },[session]);
+
+  /* Forçar load se sessão já existe no mount (evita dependência de mudança de session) */
+  useEffect(()=>{
+    if(session && !dataLoaded.current){
+      dataLoaded.current = true;
+      load();
+    }
+  },[]);
 
   /* Carga inicial: mostra spinner durante a primeira requisição */
   async function load() {
@@ -872,8 +883,8 @@ function App() {
     /* Deduplicar: se um registro do Supabase tem a mesma invoice que um HIST_REC,
        usar o do Supabase (mais atualizado). Se não tem match, manter ambos.
        Registros históricos sem match no Supabase são preservados. */
-    const liveInvoices = new Set(liveRecs.map(r=>r.invoice));
-    const histOnly = HIST_RECS.filter(r=>!liveInvoices.has(r.invoice));
+    const liveInvoices = new Set(liveRecs.map(r=>String(r.invoice)));
+    const histOnly = HIST_RECS.filter(r=>!liveInvoices.has(String(r.invoice)));
     const merged = [...histOnly, ...liveRecs];
     setRecs(merged);
   }
