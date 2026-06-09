@@ -53,6 +53,25 @@ const MESES      = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO
 const ANOS       = ["2025","2026","2027"];
 const ALL_MONTHS = ANOS.flatMap(a => MESES.map(m => m + " " + a));
 
+/* Ordenação cronológica de mes_ref ("JANEIRO 2015", "FEV 2025", etc.) */
+function sortMesRef(arr, desc=false){
+  const MESES_ORD=["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO",
+                   "JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO",
+                   "JAN","FEV","MAR","ABR","MAI","JUN","JUL","AGO","SET","OUT","NOV","DEZ"];
+  function toNum(mr){
+    if(!mr) return 0;
+    const p=mr.trim().split(/\s+/);
+    if(p.length<2) return 0;
+    const year=parseInt(p[1])||0;
+    const tok=p[0].toUpperCase();
+    // Tenta nome completo primeiro, depois abreviação
+    let mi=MESES_ORD.slice(0,12).findIndex(m=>tok.startsWith(m.substring(0,3)));
+    if(mi===-1) mi=MESES_ORD.slice(12).findIndex(m=>tok===m);
+    return year*100+(mi>=0?mi+1:0);
+  }
+  return [...arr].sort((a,b)=>desc?toNum(b)-toNum(a):toNum(a)-toNum(b));
+}
+
 /* Registros históricos 2015-2024 extraídos da planilha "Histórico de Exportação" — 1569 embarques */
 const HIST_RECS = []; /* migrado para Supabase */
 /* Nota: os totais anuais são calculados dinamicamente em cada componente
@@ -1335,7 +1354,7 @@ function PgDash({recs, yr, setYr}) {
    OPERACIONAL
 ══════════════════════════════════════════ */
 function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
-  const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
+  const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return sortMesRef([...s],true);},[recs]);
 
   function getRows(mes){ return recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0)); }
 
@@ -2287,7 +2306,7 @@ function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, f
   /* Base de dados editável só mostra registros ao vivo (não-históricos) */
   const recs = useMemo(()=>allRecs.filter(r=>!r._hist),[allRecs]);
   const [modal,setModal]=useState(null); const [del,setDel]=useState(null); const [saving,setSaving]=useState(false);
-  const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return [...s].sort();},[recs]);
+  const avail=useMemo(()=>{const s=new Set();recs.forEach(r=>{if(r.mes_ref)s.add(r.mes_ref)});return sortMesRef([...s],true);},[recs]);
   const fil=useMemo(()=>recs.filter(r=>{
     if(q&&!String(r.invoice).includes(q)&&!(r.cliente||'').toLowerCase().includes(q.toLowerCase())&&!(r.navio||'').toLowerCase().includes(q.toLowerCase())&&!(r.container||'').toLowerCase().includes(q.toLowerCase())&&!String(r.booking||'').toLowerCase().includes(q.toLowerCase())) return false;
     if(fC&&r.cliente!==fC) return false;
@@ -2811,7 +2830,7 @@ function PelletRel({notify}){
           }
         });
         setAnos(["todos",...[...aSet].sort().reverse()]);
-        setMeses(["todos",...[...mSet].sort().reverse()]);
+        setMeses(["todos",...sortMesRef([...mSet],true)]);
         setLoading(false);
       });
   },[]);
