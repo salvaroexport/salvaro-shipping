@@ -2121,7 +2121,10 @@ function PgRec({recs:allRecs, onSave, refresh, notify}) {
 
   /* Recebidos de 2026 para análise */
   const recebidos = useMemo(()=>{
-    return allRecs.filter(r=>!r._hist && r.data_pagamento && r.data_pagamento>="2026-01-01").map(r=>{
+    return allRecs.filter(r=>!r._hist && r.data_pagamento && r.data_pagamento>=(()=>{
+      /* Janela dinâmica: considera recebimentos a partir de 2026-06-09 (reset de pontualidade) */
+      return "2026-06-09";
+    })()).map(r=>{
       const reg=regras[r.cliente];
       const prev=(()=>{
         if(!reg) return null;
