@@ -854,16 +854,29 @@ function App() {
   },[session]);
 
   async function fetchData() {
-    const {data,error}=await db.from("exportacoes").select("*").order("invoice");
-    if(error) {
-      if(error.message.includes("JWT") || error.code === "PGRST301") {
-        notify("Sessão expirada. Faça login novamente.","err");
-        await db.auth.signOut();
-      } else {
-        notify("Erro: "+error.message,"err");
+    /* Supabase tem limite de 1000 por query — buscar em páginas de 1000 */
+    let allData = [];
+    let from = 0;
+    const PAGE = 1000;
+    while(true){
+      const {data, error} = await db.from("exportacoes")
+        .select("*")
+        .order("invoice")
+        .range(from, from + PAGE - 1);
+      if(error){
+        if(error.message.includes("JWT") || error.code === "PGRST301"){
+          notify("Sessão expirada. Faça login novamente.","err");
+          await db.auth.signOut();
+        } else {
+          notify("Erro: "+error.message,"err");
+        }
+        return;
       }
-      return;
+      allData = allData.concat(data || []);
+      if(!data || data.length < PAGE) break; // última página
+      from += PAGE;
     }
+    const data = allData;
     const liveRecs = (data || []).map(normalize);
     /* Deduplicar: se um registro do Supabase tem a mesma invoice que um HIST_REC,
        usar o do Supabase (mais atualizado). Se não tem match, manter ambos.
