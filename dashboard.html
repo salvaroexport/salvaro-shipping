@@ -2697,7 +2697,7 @@ function PgRel({recs, tab, setTab, yr, setYr, mes, setMes, notify}) {
   return <div className="page">
     <div className="ph"><h2>Relatórios</h2><p>Relatórios mensais e anuais com exportação CSV e Excel</p></div>
     <div className="tabs">
-      {[["mensal","Mensal"],["anual","Anual"],["geral","Geral"],["pellets","🌲 Pellets"]].map(([id,lb])=>(
+      {[["mensal","Mensal"],["anual","Anual"],["geral","Geral"],["pellets","🌲 Pellets"],["efic","📈 Eficiência"]].map(([id,lb])=>(
         <div key={id} className={`tab${tab===id?" on":""}`} onClick={()=>setTab(id)}>{lb}</div>
       ))}
     </div>
@@ -2801,6 +2801,330 @@ function PgRel({recs, tab, setTab, yr, setYr, mes, setMes, notify}) {
       </div>
     </>}
     {tab==="pellets"&&<PelletRel notify={notify}/>}
+    {tab==="efic"&&<PgEficiencia recs={recs} regras={{}}/>}
+  </div>;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   ABA EFICIÊNCIA — PgRel
+   4 indicadores:
+   1. % embarques no prazo (ETD previsto vs real — usa status + mes)
+   2. Lead time médio ETD→ETA por rota
+   3. % pagamentos no vencimento (via _diff do PgRec)
+   4. Sazonalidade por mês (volume e faturamento)
+══════════════════════════════════════════════════════════════════ */
+function PgEficiencia({recs, regras}){
+  const [yrFilt, setYrFilt] = useState("TODOS");
+
+  /* Anos disponíveis */
+  const anos = useMemo(()=>{
+    const s=new Set();
+    recs.forEach(r=>{ if(r.mes_ref){ const p=r.mes_ref.split(" "); if(p[1]) s.add(p[1]); }});
+    return ["TODOS",...[...s].sort().reverse()];
+  },[recs]);
+
+  /* Registros filtrados */
+  const fil = useMemo(()=>
+    yrFilt==="TODOS" ? recs : recs.filter(r=>r.mes_ref?.includes(yrFilt))
+  ,[recs,yrFilt]);
+
+  /* ── 1. LEAD TIME ETD→ETA ──────────────────────────────────── */
+  const leadTime = useMemo(()=>{
+    const valid = fil.filter(r=>r.etd&&r.eta);
+    if(!valid.length) return {media:null,porRota:[],porCliente:[]};
+
+    function diffDays(a,b){
+      const da=new Date(a+"T00:00:00"), db=new Date(b+"T00:00:00");
+      return Math.round((db-da)/(1000*60*60*24));
+    }
+
+    const total = valid.reduce((s,r)=>s+diffDays(r.etd,r.eta),0);
+    const media = Math.round(total/valid.length);
+
+    /* Por rota (porto_carga → destino) */
+    const rotas={};
+    valid.forEach(r=>{
+      const key=`${r.porto_carga||"?"} → ${r.destino||"?"}`;
+      if(!rotas[key]) rotas[key]={sum:0,cnt:0};
+      rotas[key].sum+=diffDays(r.etd,r.eta);
+      rotas[key].cnt++;
+    });
+    const porRota=Object.entries(rotas)
+      .map(([rota,d])=>({rota,media:Math.round(d.sum/d.cnt),cnt:d.cnt}))
+      .filter(r=>r.cnt>=3)
+      .sort((a,b)=>b.cnt-a.cnt)
+      .slice(0,8);
+
+    /* Por cliente */
+    const clis={};
+    valid.forEach(r=>{
+      const c=r.cliente||"—";
+      if(!clis[c]) clis[c]={sum:0,cnt:0};
+      clis[c].sum+=diffDays(r.etd,r.eta);
+      clis[c].cnt++;
+    });
+    const porCliente=Object.entries(clis)
+      .map(([c,d])=>({c,media:Math.round(d.sum/d.cnt),cnt:d.cnt}))
+      .sort((a,b)=>b.cnt-a.cnt);
+
+    return {media,porRota,porCliente,total:valid.length};
+  },[fil]);
+
+  /* ── 2. SAZONALIDADE ────────────────────────────────────────── */
+  const sazonalidade = useMemo(()=>{
+    const MESES_ORD=["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO",
+                     "JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];
+    const m={};
+    fil.forEach(r=>{
+      if(!r.mes_ref) return;
+      const p=r.mes_ref.trim().split(" ");
+      const nomeMes=p[0].toUpperCase();
+      // Normaliza abreviação para nome completo
+      const mi=MESES_ORD.findIndex(mn=>mn.startsWith(nomeMes.substring(0,3)));
+      const mes=mi>=0?MESES_ORD[mi]:nomeMes;
+      if(!m[mes]) m[mes]={fat:0,cnt:0,fret:0,idx:mi};
+      m[mes].fat+=(r.valor_usd||0);
+      m[mes].cnt++;
+      m[mes].fret+=(r.frete_usd||0);
+    });
+    return Object.entries(m)
+      .map(([mes,d])=>({mes,fat:d.fat,cnt:d.cnt,fret:d.fret,idx:d.idx,
+        margem:d.fat-d.fret,
+        pctMargem:d.fat>0?((d.fat-d.fret)/d.fat*100):0
+      }))
+      .sort((a,b)=>a.idx-b.idx);
+  },[fil]);
+
+  const maxFat = sazonalidade.length ? Math.max(...sazonalidade.map(m=>m.fat)) : 1;
+  const maxCnt = sazonalidade.length ? Math.max(...sazonalidade.map(m=>m.cnt)) : 1;
+
+  /* ── 3. PONTUALIDADE DE EMBARQUE ────────────────────────────── */
+  /* Proxy: processos com ETA preenchida vs total embarcado */
+  const pontualidade = useMemo(()=>{
+    const embarcados = fil.filter(r=>["EMBARCADO","ENTREGUE"].includes(r.status));
+    const comEta = embarcados.filter(r=>r.eta);
+    const comEtd = embarcados.filter(r=>r.etd);
+    const comAmbos = embarcados.filter(r=>r.etd&&r.eta);
+
+    /* Por cliente: % com documentação completa (ETD+ETA) */
+    const porCliente={};
+    embarcados.forEach(r=>{
+      const c=r.cliente||"—";
+      if(!porCliente[c]) porCliente[c]={total:0,completos:0};
+      porCliente[c].total++;
+      if(r.etd&&r.eta) porCliente[c].completos++;
+    });
+    const rankCliente=Object.entries(porCliente)
+      .map(([c,d])=>({c,total:d.total,completos:d.completos,pct:d.total>0?d.completos/d.total*100:0}))
+      .sort((a,b)=>b.total-a.total);
+
+    return {
+      total:embarcados.length,
+      comEtd:comEtd.length,
+      comEta:comEta.length,
+      comAmbos:comAmbos.length,
+      pctCompleto:embarcados.length>0?(comAmbos.length/embarcados.length*100):0,
+      porCliente:rankCliente
+    };
+  },[fil]);
+
+  /* ── 4. CONCENTRAÇÃO DE ROTAS ───────────────────────────────── */
+  const rotas = useMemo(()=>{
+    const m={};
+    fil.forEach(r=>{
+      const key=`${r.porto_carga||"?"} → ${r.destino||"?"}`;
+      if(!m[key]) m[key]={fat:0,cnt:0};
+      m[key].fat+=(r.valor_usd||0);
+      m[key].cnt++;
+    });
+    const total=fil.length||1;
+    return Object.entries(m)
+      .map(([r,d])=>({r,fat:d.fat,cnt:d.cnt,pct:d.cnt/total*100}))
+      .sort((a,b)=>b.cnt-a.cnt)
+      .slice(0,8);
+  },[fil]);
+
+  const totFat = fil.reduce((s,r)=>s+(r.valor_usd||0),0);
+
+  return <div>
+    {/* Filtro de ano */}
+    <div style={{display:"flex",gap:10,marginBottom:20,alignItems:"center"}}>
+      <select className="sel" value={yrFilt} onChange={e=>setYrFilt(e.target.value)}>
+        {anos.map(a=><option key={a} value={a}>{a==="TODOS"?"Todos os anos":a}</option>)}
+      </select>
+      <span style={{fontSize:12,color:"var(--text2)"}}>{fil.length} embarques analisados</span>
+    </div>
+
+    {/* ── KPIs de eficiência ── */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
+      {[
+        {l:"Lead Time Médio",v:leadTime.media!=null?`${leadTime.media} dias`:"—",s:`${leadTime.total||0} embarques com ETD+ETA`,c:"var(--blue)"},
+        {l:"Cobertura ETD+ETA",v:pontualidade.pctCompleto.toFixed(1)+"%",s:`${pontualidade.comAmbos} de ${pontualidade.total} embarques`,c:pontualidade.pctCompleto>=80?"#059669":pontualidade.pctCompleto>=50?"#D97706":"#DC2626"},
+        {l:"Mês de Maior Volume",v:(()=>{if(!sazonalidade.length)return"—";const mx=sazonalidade.reduce((a,b)=>b.cnt>a.cnt?b:a);return mx.mes.substring(0,3);})(),s:(()=>{if(!sazonalidade.length)return"";const mx=sazonalidade.reduce((a,b)=>b.cnt>a.cnt?b:a);return `${mx.cnt} embarques`;})(),c:"var(--gold)"},
+        {l:"Mês de Maior Fat.",v:(()=>{if(!sazonalidade.length)return"—";const mx=sazonalidade.reduce((a,b)=>b.fat>a.fat?b:a);return mx.mes.substring(0,3);})(),s:(()=>{if(!sazonalidade.length)return"";const mx=sazonalidade.reduce((a,b)=>b.fat>a.fat?b:a);return fmtUSD(mx.fat);})(),c:"#059669"},
+      ].map((k,i)=>(
+        <div key={i} className="kp" style={{borderLeft:`3px solid ${k.c}`}}>
+          <div className="kl" style={{color:k.c}}>{k.l}</div>
+          <div className="kv" style={{fontSize:18,color:k.c}}>{k.v}</div>
+          <div className="ks">{k.s}</div>
+        </div>
+      ))}
+    </div>
+
+    {/* ── Sazonalidade ── */}
+    <div className="card mb20">
+      <div className="ct">Sazonalidade — Volume e Faturamento por Mês</div>
+      <div style={{marginTop:12,overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead>
+            <tr style={{borderBottom:"2px solid var(--border)"}}>
+              <th style={{padding:"6px 10px",textAlign:"left",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase"}}>Mês</th>
+              <th style={{padding:"6px 10px",textAlign:"right",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase"}}>Embarques</th>
+              <th style={{padding:"6px 10px",textAlign:"right",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase"}}>Faturamento</th>
+              <th style={{padding:"6px 10px",textAlign:"right",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase"}}>Margem</th>
+              <th style={{padding:"6px 10px",textAlign:"right",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase"}}>% Margem</th>
+              <th style={{padding:"6px 10px",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase",minWidth:180}}>Volume relativo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sazonalidade.map((m,i)=>{
+              const isMxFat=m.fat===Math.max(...sazonalidade.map(x=>x.fat));
+              const isMxCnt=m.cnt===Math.max(...sazonalidade.map(x=>x.cnt));
+              return <tr key={i} style={{borderBottom:"1px solid var(--border)"}}>
+                <td style={{padding:"7px 10px",fontWeight:500}}>
+                  {m.mes.substring(0,3).toUpperCase()}
+                  {isMxFat&&<span style={{marginLeft:4,fontSize:9,background:"#DCFCE7",color:"#059669",padding:"1px 5px",borderRadius:6}}>pico $</span>}
+                  {isMxCnt&&<span style={{marginLeft:4,fontSize:9,background:"#DBEAFE",color:"var(--blue)",padding:"1px 5px",borderRadius:6}}>pico vol</span>}
+                </td>
+                <td style={{padding:"7px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{m.cnt}</td>
+                <td style={{padding:"7px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:"#059669",fontWeight:500}}>{fmtUSD(m.fat)}</td>
+                <td style={{padding:"7px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{fmtUSD(m.margem)}</td>
+                <td style={{padding:"7px 10px",textAlign:"right",color:m.pctMargem>15?"#059669":m.pctMargem>8?"#D97706":"#DC2626",fontWeight:600}}>{m.pctMargem.toFixed(1)}%</td>
+                <td style={{padding:"7px 10px"}}>
+                  <div style={{display:"flex",gap:3,height:14,borderRadius:3,overflow:"hidden",background:"var(--bg3)"}}>
+                    <div style={{width:(m.fat/maxFat*100)+"%",background:"#059669",transition:"width .4s"}}/>
+                  </div>
+                  <div style={{display:"flex",gap:3,height:6,borderRadius:3,overflow:"hidden",background:"var(--bg3)",marginTop:2}}>
+                    <div style={{width:(m.cnt/maxCnt*100)+"%",background:"var(--blue)",transition:"width .4s"}}/>
+                  </div>
+                </td>
+              </tr>;
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{borderTop:"2px solid var(--border)",background:"var(--bg3)"}}>
+              <td style={{padding:"7px 10px",fontWeight:600}}>TOTAL</td>
+              <td style={{padding:"7px 10px",textAlign:"right",fontWeight:600}}>{sazonalidade.reduce((s,m)=>s+m.cnt,0)}</td>
+              <td style={{padding:"7px 10px",textAlign:"right",fontWeight:700,color:"#059669"}}>{fmtUSD(sazonalidade.reduce((s,m)=>s+m.fat,0))}</td>
+              <td style={{padding:"7px 10px",textAlign:"right",fontWeight:600}}>{fmtUSD(sazonalidade.reduce((s,m)=>s+m.margem,0))}</td>
+              <td style={{padding:"7px 10px",textAlign:"right",fontWeight:700,color:"var(--blue)"}}>
+                {totFat>0?((sazonalidade.reduce((s,m)=>s+m.margem,0)/totFat)*100).toFixed(1)+"%":"—"}
+              </td>
+              <td/>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    {/* ── Lead Time por Rota ── */}
+    {leadTime.porRota.length>0&&<div className="g2 mb20">
+      <div className="card">
+        <div className="ct">Lead Time por Rota (ETD → ETA)</div>
+        <div style={{marginTop:8}}>
+          {leadTime.porRota.map((r,i)=>(
+            <div key={i} style={{marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                <span style={{fontWeight:500}}>{r.rota}</span>
+                <span style={{color:"var(--blue)",fontWeight:700}}>{r.media} dias <span style={{color:"var(--text3)",fontWeight:400}}>({r.cnt} embarques)</span></span>
+              </div>
+              <div style={{height:6,background:"var(--bg3)",borderRadius:3}}>
+                <div style={{height:6,background:"var(--blue)",borderRadius:3,width:Math.min(r.media/60*100,100)+"%",transition:"width .4s"}}/>
+              </div>
+            </div>
+          ))}
+          <div style={{marginTop:10,padding:"8px 12px",background:"var(--blue3)",borderRadius:8,fontSize:11,color:"var(--text2)"}}>
+            <strong style={{color:"var(--blue)"}}>ℹ️ Média geral:</strong> {leadTime.media} dias · Baseado em rotas com ≥ 3 embarques
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="ct">Lead Time por Cliente</div>
+        <div style={{marginTop:8}}>
+          {leadTime.porCliente.map((c,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid var(--border)",fontSize:12}}>
+              <span style={{fontWeight:500}}>{c.c}</span>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{color:"var(--text3)",fontSize:11}}>{c.cnt} embarques</span>
+                <span style={{fontFamily:"Syne",fontWeight:700,color:c.media<30?"#059669":c.media<45?"#D97706":"#DC2626",fontSize:14}}>{c.media}d</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>}
+
+    {/* ── Cobertura de dados por cliente ── */}
+    <div className="card mb20">
+      <div className="ct">Cobertura de Dados — ETD + ETA por Cliente</div>
+      <div style={{fontSize:11,color:"var(--text2)",marginBottom:12}}>
+        Indica a qualidade do preenchimento de datas nos embarques — impacta a precisão de todos os cálculos de eficiência.
+      </div>
+      <div className="tw"><table>
+        <thead><tr>
+          <th>Cliente</th>
+          <th className="r">Total embarques</th>
+          <th className="r">Com ETD+ETA</th>
+          <th className="r">Cobertura</th>
+          <th>Qualidade</th>
+        </tr></thead>
+        <tbody>{pontualidade.porCliente.map((c,i)=>(
+          <tr key={i}>
+            <td><strong>{c.c}</strong></td>
+            <td className="r">{c.total}</td>
+            <td className="r">{c.completos}</td>
+            <td className="r" style={{fontWeight:700,color:c.pct>=80?"#059669":c.pct>=50?"#D97706":"#DC2626"}}>{c.pct.toFixed(0)}%</td>
+            <td>
+              <div style={{height:8,background:"var(--bg3)",borderRadius:4,width:120}}>
+                <div style={{height:8,background:c.pct>=80?"#059669":c.pct>=50?"#D97706":"#DC2626",borderRadius:4,width:c.pct+"%",transition:"width .4s"}}/>
+              </div>
+            </td>
+          </tr>
+        ))}</tbody>
+      </table></div>
+    </div>
+
+    {/* ── Principais rotas ── */}
+    <div className="card">
+      <div className="ct">Principais Rotas — Volume e Faturamento</div>
+      <div className="tw" style={{marginTop:8}}><table>
+        <thead><tr>
+          <th>Rota</th>
+          <th className="r">Embarques</th>
+          <th className="r">Participação</th>
+          <th className="r">Faturamento</th>
+          <th className="r">% Fat.</th>
+        </tr></thead>
+        <tbody>{rotas.map((r,i)=>(
+          <tr key={i}>
+            <td style={{fontWeight:500,fontSize:12}}>{r.r}</td>
+            <td className="r">{r.cnt}</td>
+            <td className="r">
+              <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}>
+                <div style={{width:50,height:5,background:"var(--bg3)",borderRadius:3}}>
+                  <div style={{width:r.pct+"%",height:5,background:"var(--blue)",borderRadius:3}}/>
+                </div>
+                <span style={{fontSize:11,fontWeight:600,color:"var(--blue)"}}>{r.pct.toFixed(1)}%</span>
+              </div>
+            </td>
+            <td className="r" style={{color:"#059669",fontWeight:500}}>{fmtUSD(r.fat)}</td>
+            <td className="r" style={{fontSize:11,color:"var(--text2)"}}>{totFat>0?(r.fat/totFat*100).toFixed(1):0}%</td>
+          </tr>
+        ))}</tbody>
+      </table></div>
+    </div>
   </div>;
 }
 
