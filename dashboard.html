@@ -1615,7 +1615,18 @@ function PgCart({recs, m1, m2, m3}) {
                 <td>{r.destino||"—"}</td>
                 <td style={{textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:500}}>{fmtUSD(r.valor_usd)}</td>
                 <td style={{color:"var(--text2)"}}>{fmtDate(r.eta_pedido)}</td>
-                <td><EmbBadge v={r.status}/></td>
+                <td>
+                <EmbBadge v={r.status}/>
+                {(()=>{
+                  if(!r.etd||!r.status) return null;
+                  const etdD=new Date(r.etd+"T00:00:00");
+                  const statusDesatualizado=
+                    (r.status==="NO PORTO"||r.status==="EM PRODUÇÃO"||r.status==="AGD ESTUFAGEM")
+                    && etdD < today;
+                  if(!statusDesatualizado) return null;
+                  return <div style={{fontSize:9,color:"#D97706",fontWeight:600,marginTop:2,whiteSpace:"nowrap"}}>⚠ verificar status</div>;
+                })()}
+              </td>
               </tr>
             ))}</tbody>
           </table>
@@ -2343,6 +2354,22 @@ function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, f
 
   async function hSave(){
     if(!form.invoice){notify("Invoice obrigatório","err");return;}
+
+    /* ── Validação progressiva por status ── */
+    if(form.status==="EMBARCADO"||form.status==="ENTREGUE"){
+      const erros=[];
+      if(!form.etd) erros.push("ETD (data de embarque)");
+      if(!form.bl&&!form.booking) erros.push("BL ou Booking");
+      if(!form.container) erros.push("Container");
+      if(erros.length){
+        notify("Para status "+form.status+", preencha: "+erros.join(", "),"err");
+        return;
+      }
+    }
+    if(form.status==="NO PORTO"){
+      if(!form.container){notify("Para status NO PORTO, informe o Container","err");return;}
+    }
+
     if(!form.mes_ref){notify("Mês de referência obrigatório","err");return;}
 
     const newInv=parseInt(form.invoice);
@@ -3721,6 +3748,7 @@ function PgPell({notify,session}){
   const [saving,setSaving]=useState(false);
   const [clientes,setClientes]=useState([]);
   const [bookCnt,setBookCnt]=useState({});
+  const [bookingSearch,setBookingSearch]=useState({}); // invoiceId -> [booking numbers]
   const [contCnt,setContCnt]=useState({});
   const [pagAlerta,setPagAlerta]=useState({});
   const [pagCnt,setPagCnt]=useState({});
@@ -3746,12 +3774,20 @@ function PgPell({notify,session}){
   async function loadCounts(rows){
     if(!rows||!rows.length)return;
     const [bk,cn,pg]=await Promise.all([
-      db.from("pellets_bookings").select("pellet_id"),
+      db.from("pellets_bookings").select("pellet_id,booking,ref_agente"),
       db.from("pellets_containers").select("booking_id,pellets_bookings!inner(pellet_id)"),
       db.from("pellets_pagamentos").select("pellet_id,recebido,dt_prevista")
     ]);
-    const bm={};(bk.data||[]).forEach(r=>{bm[r.pellet_id]=(bm[r.pellet_id]||0)+1;});
+    const bm={};
+    const bsm={};
+    (bk.data||[]).forEach(r=>{
+      bm[r.pellet_id]=(bm[r.pellet_id]||0)+1;
+      if(!bsm[r.pellet_id]) bsm[r.pellet_id]=[];
+      if(r.booking) bsm[r.pellet_id].push(r.booking.toLowerCase());
+      if(r.ref_agente) bsm[r.pellet_id].push(r.ref_agente.toLowerCase());
+    });
     setBookCnt(bm);
+    setBookingSearch(bsm);
     const cm={};
     (cn.data||[]).forEach(r=>{const pid=r.pellets_bookings?.pellet_id;if(pid)cm[pid]=(cm[pid]||0)+1;});
     setContCnt(cm);
@@ -3782,11 +3818,18 @@ function PgPell({notify,session}){
   },[]);
 
   const filtered=useMemo(()=>recs.filter(r=>{
-    if(q&&!String(r.invoice||"").toLowerCase().includes(q.toLowerCase())&&!(r.cliente||"").toLowerCase().includes(q.toLowerCase()))return false;
+    if(q){
+      const ql=q.toLowerCase();
+      const match=String(r.invoice||"").toLowerCase().includes(ql)
+        ||(r.cliente||"").toLowerCase().includes(ql)
+        ||(r.navio||"").toLowerCase().includes(ql)
+        ||(bookingSearch[r.id]||[]).some(b=>b.includes(ql));
+      if(!match) return false;
+    }
     if(fSt&&r.status!==fSt)return false;
     if(fCli&&r.cliente!==fCli)return false;
     return true;
-  }),[recs,q,fSt,fCli]);
+  }),[recs,q,fSt,fCli,bookingSearch]);
 
   const kpis=useMemo(()=>({
     fat:recs.reduce((s,r)=>s+(parseFloat(r.valor_eur)||0),0),
@@ -3918,7 +3961,7 @@ function PgPell({notify,session}){
 
     {tab==="lista"&&<>
       <div className="fb" style={{marginBottom:12}}>
-        <input placeholder="Buscar invoice, cliente..." value={q} onChange={e=>setQ(e.target.value)} style={{width:220}}/>
+        <input placeholder="Buscar invoice, cliente, booking..." value={q} onChange={e=>setQ(e.target.value)} style={{width:260}}/>
         <select value={fCli} onChange={e=>setFCli(e.target.value)}>
           <option value="">Todos os clientes</option>
           {[...new Set(recs.map(r=>r.cliente).filter(Boolean))].sort().map(c=><option key={c}>{c}</option>)}
