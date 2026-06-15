@@ -923,7 +923,7 @@ function App() {
     const clean = {...rec};
     DATE_FIELDS.forEach(f=>{ if(clean[f]==="") clean[f]=null; });
     /* Limpar campos numéricos vazios */
-    ["valor_usd","frete_usd"].forEach(f=>{ if(clean[f]==="") clean[f]=null; });
+    ["valor_usd","frete_usd","custo_fatura_brl","taxa_cambio"].forEach(f=>{ if(clean[f]==="") clean[f]=null; });
     const {error}=await db.from("exportacoes").upsert(clean,{onConflict:"invoice"});
     if(error){notify("Erro ao salvar: "+error.message,"err");return false;}
     await refresh(); notify("Salvo com sucesso!"); return true;
@@ -2357,11 +2357,26 @@ function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, f
     return true;
   }),[recs,q,fC,fM,fD]);
 
-  const E0={invoice:"",cliente:"",po:"",nf:"",porto_carga:"IMBITUBA",destino:"",navio:"",container:"",booking:"",transportadora:"",valor_usd:"",frete_usd:"",agente:"",isf_docs:"",bl:"",status_doc:"PENDENTE",dl_carga:"",estufagem:"",eta_pedido:"",etd:"",eta:"",status:"",mes_ref:""};
+  const E0={invoice:"",cliente:"",po:"",nf:"",porto_carga:"IMBITUBA",destino:"",navio:"",container:"",booking:"",transportadora:"",valor_usd:"",frete_usd:"",agente:"",custo_fatura_brl:"",taxa_cambio:"",isf_docs:"",bl:"",status_doc:"PENDENTE",dl_carga:"",estufagem:"",eta_pedido:"",etd:"",eta:"",status:"",mes_ref:""};
   const [form,setForm]=useState(E0);
-  const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const upd=async(k,v)=>{
+    setForm(f=>({...f,[k]:v}));
+    // Quando NF é preenchida E taxa_cambio está vazia → buscar PTAX D-1 de HOJE
+    if(k==="nf" && v && v.trim()){
+      setForm(f=>{
+        if(f.taxa_cambio) return f; // já tem taxa, não sobrescrever
+        // Referência = hoje (data do faturamento), não o ETD
+        const dataRef = new Date().toISOString().slice(0,10);
+        buscarPTAX(dataRef).then(taxa=>{
+          if(taxa) setForm(ff=>({...ff, taxa_cambio: taxa.toFixed(4)}));
+          else notify("PTAX D-1 não encontrada. Informe manualmente.","err");
+        });
+        return f;
+      });
+    }
+  };
 
-  function openEdit(r){setForm({invoice:r.invoice||"",cliente:r.cliente||"",po:r.po||"",nf:r.nf||"",porto_carga:r.porto_carga||"IMBITUBA",destino:r.destino||"",navio:r.navio||"",container:r.container||"",booking:r.booking||"",transportadora:r.transportadora||"",valor_usd:r.valor_usd||"",frete_usd:r.frete_usd||"",agente:r.agente||"",isf_docs:r.isf_docs||"",bl:r.bl||"",status_doc:r.status_doc||"PENDENTE",dl_carga:r.dl_carga||"",estufagem:r.estufagem||"",eta_pedido:r.eta_pedido||"",etd:r.etd||"",eta:r.eta||"",status:r.status||"",mes_ref:r.mes_ref||""});setModal(r);}
+  function openEdit(r){setForm({invoice:r.invoice||"",cliente:r.cliente||"",po:r.po||"",nf:r.nf||"",porto_carga:r.porto_carga||"IMBITUBA",destino:r.destino||"",navio:r.navio||"",container:r.container||"",booking:r.booking||"",transportadora:r.transportadora||"",valor_usd:r.valor_usd||"",frete_usd:r.frete_usd||"",agente:r.agente||"",custo_fatura_brl:r.custo_fatura_brl||"",taxa_cambio:r.taxa_cambio||"",isf_docs:r.isf_docs||"",bl:r.bl||"",status_doc:r.status_doc||"PENDENTE",dl_carga:r.dl_carga||"",estufagem:r.estufagem||"",eta_pedido:r.eta_pedido||"",etd:r.etd||"",eta:r.eta||"",status:r.status||"",mes_ref:r.mes_ref||""});setModal(r);}
 
   /* Estado para confirmação de sobrescrita por duplicidade */
   const [dupConfirm,setDupConfirm]=useState(null);
@@ -2378,6 +2393,28 @@ function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, f
     setSaving(false);
     if(ok){setModal(null);setDupConfirm(null);}
     return ok;
+  }
+
+  /* ── Busca PTAX compra D-1 na API BACEN ── */
+  async function buscarPTAX(dataRef){
+    // dataRef: 'YYYY-MM-DD' → precisamos de MM-DD-YYYY para BACEN
+    // e buscar D-1 (pular fins de semana)
+    try {
+      const d = new Date(dataRef+"T12:00:00");
+      // Volta até encontrar dia útil (seg-sex)
+      d.setDate(d.getDate()-1);
+      while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()-1);
+      const mm=String(d.getMonth()+1).padStart(2,"0");
+      const dd=String(d.getDate()).padStart(2,"0");
+      const yyyy=d.getFullYear();
+      const url=`https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarDia(dataCotacao=@d)?@d='${mm}-${dd}-${yyyy}'&$format=json&$select=cotacaoCompra`;
+      const resp = await fetch(url);
+      const json = await resp.json();
+      const val = json?.value?.[0]?.cotacaoCompra;
+      return val ? parseFloat(val) : null;
+    } catch(e) {
+      return null;
+    }
   }
 
   async function hSave(){
@@ -2465,7 +2502,39 @@ function PgBase({recs:allRecs,onSave,onDel,notify, q,setQ, fC,setFC, fM,setFM, f
           <div className="fr mb16"><Field label="Porto de Carga" field="porto_carga" opts={cadData?.portos?.length?cadData.portos:PORTOS} form={form} upd={upd}/><Field label="Destino" field="destino" opts={cadData?.destinos?.length?cadData.destinos:DESTINOS} form={form} upd={upd}/><Field label="Navio" field="navio" form={form} upd={upd}/><Field label="Container" field="container" form={form} upd={upd}/><Field label="Booking" field="booking" form={form} upd={upd}/><Field label="Transportadora" field="transportadora" opts={cadData?.transportadoras?.length?cadData.transportadoras:TRANSP} form={form} upd={upd}/></div>
           <hr className="dv"/>
           <div className="st">Financeiro</div>
-          <div className="fr mb16"><Field label="Valor USD" field="valor_usd" type="number" form={form} upd={upd}/><Field label="Frete USD" field="frete_usd" type="number" form={form} upd={upd}/><Field label="Agente" field="agente" form={form} upd={upd}/></div>
+          <div className="fr mb16">
+            <Field label="Valor USD" field="valor_usd" type="number" form={form} upd={upd}/>
+            <Field label="Frete USD" field="frete_usd" type="number" form={form} upd={upd}/>
+            <Field label="Agente" field="agente" form={form} upd={upd}/>
+          </div>
+          <div className="fr mb16">
+            <Field label="Custo Fatura BRL (total agente)" field="custo_fatura_brl" type="number" form={form} upd={upd}/>
+            <div className="field">
+              <label>PTAX Compra D-1 <span style={{fontSize:10,color:"var(--text3)"}}>(auto ao salvar NF)</span></label>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input type="number" step="0.0001" value={form.taxa_cambio||""} onChange={e=>setForm(f=>({...f,taxa_cambio:e.target.value}))} placeholder="ex: 5.5162"/>
+                {form.nf&&!form.taxa_cambio&&<button className="btn bsm bgx" style={{whiteSpace:"nowrap",fontSize:11}} onClick={async()=>{
+                  const dataRef=new Date().toISOString().slice(0,10);
+                  const taxa=await buscarPTAX(dataRef);
+                  if(taxa) setForm(f=>({...f,taxa_cambio:taxa.toFixed(4)}));
+                  else notify("PTAX não encontrada. Informe manualmente.","err");
+                }}>⚡ Buscar</button>}
+                {form.taxa_cambio&&<span style={{fontSize:11,color:"var(--text3)",whiteSpace:"nowrap"}}>BRL {form.taxa_cambio}</span>}
+              </div>
+            </div>
+            {form.custo_fatura_brl&&form.taxa_cambio&&<div className="field">
+              <label>Margem Real (USD)</label>
+              <div style={{padding:"8px 10px",background:"var(--bg3)",borderRadius:8,fontSize:13,fontWeight:600,color:"#059669"}}>
+                {(()=>{
+                  const fat=parseFloat(form.valor_usd)||0;
+                  const custo=(parseFloat(form.custo_fatura_brl)||0)/(parseFloat(form.taxa_cambio)||1);
+                  const margem=fat-custo;
+                  const pct=fat>0?(margem/fat*100):0;
+                  return `${margem>=0?"+":""} $${margem.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})} (${pct.toFixed(1)}%)`;
+                })()}
+              </div>
+            </div>}
+          </div>
           <hr className="dv"/>
           <div className="st">Documentação e Datas</div>
           <div className="fr"><Field label="ISF/DOCS" field="isf_docs" type="date" form={form} upd={upd}/><Field label="BL" field="bl" type="date" form={form} upd={upd}/><Field label="Status Doc" field="status_doc" opts={STATUS_DOC} form={form} upd={upd}/><Field label="DL Carga" field="dl_carga" type="date" form={form} upd={upd}/><Field label="Estufagem" field="estufagem" type="date" form={form} upd={upd}/><Field label="ETA Pedido" field="eta_pedido" type="date" form={form} upd={upd}/><Field label="ETD" field="etd" type="date" form={form} upd={upd}/><Field label="ETA" field="eta" type="date" form={form} upd={upd}/><Field label="Status" field="status" opts={STATUS_EMB} form={form} upd={upd}/></div>
