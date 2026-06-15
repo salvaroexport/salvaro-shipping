@@ -1487,7 +1487,23 @@ function PgOps({recs, ant, setAnt, vig, setVig, seg, setSeg}) {
 function PgCart({recs, m1, m2, m3}) {
   const [expanded,setExpanded]=useState(null); /* which month is expanded */
 
-  function getCartRows(mes){ return recs.filter(r=>r.mes_ref===mes).sort((a,b)=>(a.invoice||0)-(b.invoice||0)); }
+  function getCartRows(mes){
+    if(!mes) return [];
+    const mesUpper=mes.trim().toUpperCase();
+    // Aceita tanto nome completo ("JUNHO 2026") quanto abreviado ("JUN 2026")
+    const partsM=mesUpper.split(" ");
+    const anoM=partsM[partsM.length-1];
+    const tokM=partsM[0].substring(0,3); // primeiros 3 chars do mês
+    return recs.filter(r=>{
+      if(!r.mes_ref) return false;
+      const mr=r.mes_ref.trim().toUpperCase();
+      if(mr===mesUpper) return true; // match exato
+      const partsR=mr.split(" ");
+      const anoR=partsR[partsR.length-1];
+      const tokR=partsR[0].substring(0,3);
+      return anoR===anoM&&tokR===tokM;
+    }).sort((a,b)=>(a.invoice||0)-(b.invoice||0));
+  }
 
   /* Dados agregados dos 3 meses */
   const months = useMemo(()=>{
@@ -1589,8 +1605,8 @@ function PgCart({recs, m1, m2, m3}) {
             {m.byCli.map((c,i)=>(
               <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
                 <div style={{width:50,fontSize:11,color:"var(--text2)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.l}</div>
-                <div style={{flex:1,height:5,background:"#EEF2F6",borderRadius:3,overflow:"hidden"}}><div style={{width:`${(c.v/m.fat)*100}%`,height:"100%",background:m.color,borderRadius:3}}/></div>
-                <div style={{fontSize:10,fontWeight:600,color:"var(--text)",minWidth:40,textAlign:"right"}}>{(c.v/m.fat*100).toFixed(0)}%</div>
+                <div style={{flex:1,height:5,background:"#EEF2F6",borderRadius:3,overflow:"hidden"}}><div style={{width:`${m.fat>0?(c.v/m.fat)*100:0}%`,height:"100%",background:m.color,borderRadius:3}}/></div>
+                <div style={{fontSize:10,fontWeight:600,color:"var(--text)",minWidth:40,textAlign:"right"}}>{m.fat>0?(c.v/m.fat*100).toFixed(0):0}%</div>
               </div>
             ))}
           </div>
