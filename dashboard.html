@@ -821,23 +821,34 @@ function App() {
       setAuthChecking(false);
     });
     const {data:{subscription}} = db.auth.onAuthStateChange((event, sess)=>{
-      if(event==="INITIAL_SESSION"){
-        /* Sessão inicial: atualiza session E libera o authChecking juntos */
+      /* Ignorar TOKEN_REFRESHED — não recarrega dados, não fecha modais */
+      if(event==="TOKEN_REFRESHED") return;
+      if(event==="INITIAL_SESSION"||event==="SIGNED_IN"||event==="USER_UPDATED"){
         setSession(sess);
         setAuthChecking(false);
-      } else if(event==="SIGNED_IN"||event==="USER_UPDATED"){
-        setSession(sess);
       } else if(event==="SIGNED_OUT"){
         setSession(null);
+        setAuthChecking(false);
       }
     });
     return ()=>subscription.unsubscribe();
   },[]);
 
-  /* Carregar dados quando session ou authChecking mudam */
+  /* Carregar dados UMA VEZ por sessão de usuário
+     — usa ref para não recarregar em token refresh ou re-render */
+  const _loadedUid = React.useRef(null);
   useEffect(()=>{
-    if(!authChecking && session) load();
-    else if(!authChecking && !session) setRecs(HIST_RECS);
+    if(authChecking) return; // aguarda auth resolver
+    if(session){
+      const uid = session.user?.id;
+      if(uid && uid !== _loadedUid.current){
+        _loadedUid.current = uid;
+        load();
+      }
+    } else {
+      _loadedUid.current = null;
+      setRecs(HIST_RECS);
+    }
   },[session, authChecking]);
 
   /* Carga inicial: mostra spinner durante a primeira requisição */
