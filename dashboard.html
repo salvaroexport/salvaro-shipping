@@ -1635,10 +1635,11 @@ function PgCart({recs, m1, m2, m3}) {
                 <EmbBadge v={r.status}/>
                 {(()=>{
                   if(!r.etd||!r.status) return null;
+                  const _td=new Date();_td.setHours(0,0,0,0);
                   const etdD=new Date(r.etd+"T00:00:00");
                   const statusDesatualizado=
                     (r.status==="NO PORTO"||r.status==="EM PRODUÇÃO"||r.status==="AGD ESTUFAGEM")
-                    && etdD < today;
+                    && etdD < _td;
                   if(!statusDesatualizado) return null;
                   return <div style={{fontSize:9,color:"#D97706",fontWeight:600,marginTop:2,whiteSpace:"nowrap"}}>⚠ verificar status</div>;
                 })()}
