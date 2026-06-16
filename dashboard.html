@@ -1096,6 +1096,45 @@ function PgDash({recs, yr, setYr}) {
     return Object.entries(m).sort(([,a],[,b])=>b-a).map(([l,v])=>({l,v}));
   },[fil]);
 
+  /* Formatador BRL */
+  const fmtBRL=v=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:2}).format(v||0);
+
+  /* Margem real (usa custo_fatura_brl + taxa_cambio quando disponível) */
+  const margemReal=useMemo(()=>{
+    const rows=fil.filter(r=>r.custo_fatura_brl&&r.taxa_cambio);
+    const fatTotal=rows.reduce((s,r)=>s+(r.valor_usd||0),0);
+    const custoUSD=rows.reduce((s,r)=>s+((r.custo_fatura_brl||0)/(r.taxa_cambio||1)),0);
+    const margemUSD=fatTotal-custoUSD;
+    const recBRL=rows.reduce((s,r)=>s+((r.valor_usd||0)*(r.taxa_cambio||0)),0);
+    const liqBRL=recBRL-rows.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);
+    return {
+      fatTotal, custoUSD, margemUSD,
+      pct: fatTotal>0?margemUSD/fatTotal*100:0,
+      recBRL, liqBRL,
+      cnt: rows.length,
+      cobertura: fil.length>0?rows.length/fil.length*100:0,
+    };
+  },[fil]);
+
+  /* Evolução mensal da margem real */
+  const margemMensal=useMemo(()=>{
+    const m={};
+    fil.filter(r=>r.custo_fatura_brl&&r.taxa_cambio&&r.mes_ref).forEach(r=>{
+      const k=r.mes_ref;
+      if(!m[k]) m[k]={fat:0,custo:0,rec_brl:0,custo_brl:0};
+      m[k].fat+=(r.valor_usd||0);
+      m[k].custo+=(r.custo_fatura_brl||0)/(r.taxa_cambio||1);
+      m[k].rec_brl+=(r.valor_usd||0)*(r.taxa_cambio||0);
+      m[k].custo_brl+=(r.custo_fatura_brl||0);
+    });
+    return sortMesRef(Object.keys(m)).map(k=>({
+      l:k.split(" ")[0].substring(0,3),
+      margem:m[k].fat-m[k].custo,
+      pct:m[k].fat>0?(m[k].fat-m[k].custo)/m[k].fat*100:0,
+      liq_brl:m[k].rec_brl-m[k].custo_brl,
+    }));
+  },[fil]);
+
   /* Margem bruta por cliente (fat - frete) */
   const byCliMargem=useMemo(()=>{
     const mf={},mr={};
@@ -1104,12 +1143,24 @@ function PgDash({recs, yr, setYr}) {
       mf[c]=(mf[c]||0)+(r.valor_usd||0);
       mr[c]=(mr[c]||0)+(r.frete_usd||0);
     });
+    // Margem real por cliente
+    const mc={},mtaxa={};
+    fil.filter(r=>r.custo_fatura_brl&&r.taxa_cambio).forEach(r=>{
+      const c=r.cliente||"—";
+      mc[c]=(mc[c]||0)+(r.custo_fatura_brl||0);
+      mtaxa[c]=(mtaxa[c]||0)+(r.taxa_cambio||0);
+    });
+    const tcnt={};
+    fil.filter(r=>r.custo_fatura_brl&&r.taxa_cambio).forEach(r=>{
+      const c=r.cliente||"—"; tcnt[c]=(tcnt[c]||0)+1;
+    });
     return Object.entries(mf).sort(([,a],[,b])=>b-a).map(([l,fat])=>({
-      l,
-      fat,
+      l, fat,
       fret:mr[l]||0,
       margem:fat-(mr[l]||0),
-      pctMargem:fat>0?((fat-(mr[l]||0))/fat*100):null
+      pctMargem:fat>0?((fat-(mr[l]||0))/fat*100):null,
+      margemReal:tcnt[l]?fat-(mc[l]||0)/(mtaxa[l]||1/tcnt[l]):null,
+      pctReal:tcnt[l]&&fat>0?(fat-(mc[l]||0)/(mtaxa[l]||1/tcnt[l]))/fat*100:null,
     }));
   },[fil]);
 
@@ -1198,10 +1249,15 @@ function PgDash({recs, yr, setYr}) {
       <div className="kp"><div className="kl">Média / CNTR</div><div className="kv gc" style={{fontSize:20}}>{fmtUSD(cnt?fat/cnt:0)}</div><YoY cur={cnt?fat/cnt:0} prev={cntPrev?fatPrev/cntPrev:0}/></div>
       <div className="kp"><div className="kl">Frete Total</div><div className="kv" style={{fontSize:20}}>{fmtUSD(fret)}</div><div className="ks">{fat?((fret/fat)*100).toFixed(1)+"%":"—"} do fat.</div><YoY cur={fret} prev={fretPrev} invert={true}/></div>
       <div className="kp"><div className="kl">Clientes</div><div className="kv gr">{byCli.length}</div><div className="ks">no período</div></div>
-      <div className="kp">
-        <div className="kl">Margem Bruta</div>
-        <div className="kv" style={{fontSize:18,color:"#059669"}}>{fmtUSD(fil.reduce((s,r)=>s+(r.valor_usd||0)-(r.frete_usd||0),0))}</div>
-        <div className="ks">{fat>0?((fil.reduce((s,r)=>s+(r.valor_usd||0)-(r.frete_usd||0),0)/fat)*100).toFixed(1)+"% do fat.":"—"}</div>
+      <div className="kp" style={{borderLeft:"3px solid #059669"}}>
+        <div className="kl" style={{color:"#059669"}}>Margem Real (USD)</div>
+        <div className="kv" style={{fontSize:16,color:"#059669"}}>{margemReal.cnt>0?fmtUSD(margemReal.margemUSD):"—"}</div>
+        <div className="ks">{margemReal.cnt>0?margemReal.pct.toFixed(1)+"% · "+margemReal.cnt+" invoices":"aguardando custos"}</div>
+      </div>
+      <div className="kp" style={{borderLeft:"3px solid #7C3AED"}}>
+        <div className="kl" style={{color:"#7C3AED"}}>Líquido Estimado (BRL)</div>
+        <div className="kv" style={{fontSize:16,color:"#7C3AED"}}>{margemReal.cnt>0?fmtBRL(margemReal.liqBRL):"—"}</div>
+        <div className="ks">{margemReal.cnt>0?margemReal.cobertura.toFixed(0)+"% dos invoices com custo":"—"}</div>
       </div>
       {maxConc&&(()=>{const sm=semaforo(maxConc.pct);return(
         <div className="kp" style={{borderLeft:"3px solid "+sm.cor,background:sm.bg+"40"}}>
@@ -1230,7 +1286,10 @@ function PgDash({recs, yr, setYr}) {
               return <div key={i} style={{marginBottom:10}}>
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
                   <span style={{fontWeight:500}}>{c.l}</span>
-                  <span style={{color:"var(--text2)"}}>{fmtUSD(c.margem)} <span style={{color:"#059669",fontWeight:600}}>({c.pctMargem!=null?c.pctMargem.toFixed(1)+"%":"—"})</span></span>
+                  <span style={{color:"var(--text2)"}}>
+                  {fmtUSD(c.margem)} <span style={{color:"#059669",fontWeight:600}}>({c.pctMargem!=null?c.pctMargem.toFixed(1)+"%":"—"})</span>
+                  {c.margemReal!=null&&<span style={{marginLeft:6,color:"#7C3AED",fontWeight:600,fontSize:10}}>real: {c.pctReal!=null?c.pctReal.toFixed(1)+"%":"—"}</span>}
+                </span>
                 </div>
                 <div style={{display:"flex",gap:2,height:8,borderRadius:4,overflow:"hidden"}}>
                   <div style={{width:(c.fat>0?(c.margem/c.fat*100):0)+"%",background:"#059669",transition:"width .4s"}}/>
@@ -1278,6 +1337,29 @@ function PgDash({recs, yr, setYr}) {
         <div className="card"><div className="ct">Status Documentação</div><Donut data={docSt}/></div>
       </div>
     </>}
+
+    {/* ── Evolução mensal da margem real ── */}
+    {margemMensal.length>1&&<div className="card mb20">
+      <div className="ct">Evolução Mensal — Margem Real e Líquido BRL</div>
+      <div style={{overflowX:"auto",marginTop:12}}>
+        <div style={{display:"flex",gap:0,alignItems:"flex-end",height:120,minWidth:Math.max(400,margemMensal.length*60)}}>
+          {margemMensal.map((m,i)=>{
+            const maxM=Math.max(...margemMensal.map(x=>Math.abs(x.margem)),1);
+            const h=Math.round(Math.abs(m.margem)/maxM*90);
+            const pos=m.margem>=0;
+            return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:50}}>
+              <div style={{fontSize:10,fontWeight:600,color:pos?"#059669":"#DC2626"}}>{m.pct.toFixed(0)}%</div>
+              <div style={{width:"70%",height:h,background:pos?"#059669":"#DC2626",borderRadius:"3px 3px 0 0",transition:"height .4s",minHeight:4}}/>
+              <div style={{fontSize:10,color:"var(--text3)",marginTop:2}}>{m.l}</div>
+            </div>;
+          })}
+        </div>
+      </div>
+      <div style={{marginTop:10,display:"flex",gap:20,fontSize:11,color:"var(--text2)",flexWrap:"wrap"}}>
+        <span>🟢 Margem Real USD · 🟣 Líquido BRL</span>
+        {margemReal.cobertura<100&&<span style={{color:"#D97706"}}>⚠ {(100-margemReal.cobertura).toFixed(0)}% dos invoices sem custo cadastrado</span>}
+      </div>
+    </div>}
 
     {/* ── Margem bruta e Concentração — sempre visíveis ── */}
     <div className="g2 mb20">
@@ -3249,6 +3331,187 @@ function PgEficiencia({recs, regras}){
         ))}</tbody>
       </table></div>
     </div>
+
+    {/* ══ SEÇÃO: CUSTOS E MARGEM REAL ══ */}
+    <div style={{marginTop:32,paddingTop:20,borderTop:"2px solid var(--border)"}}>
+      <div style={{fontFamily:"Syne",fontSize:16,fontWeight:700,color:"var(--text)",marginBottom:16}}>
+        💰 Custos e Margem Real
+      </div>
+
+      {(()=>{
+        // Calcular dados de custo
+        const comCusto=fil.filter(r=>r.custo_fatura_brl&&r.taxa_cambio);
+        const semCusto=fil.filter(r=>!r.custo_fatura_brl||!r.taxa_cambio);
+        const fatTotal=comCusto.reduce((s,r)=>s+(r.valor_usd||0),0);
+        const custoUSD=comCusto.reduce((s,r)=>s+((r.custo_fatura_brl||0)/(r.taxa_cambio||1)),0);
+        const margemUSD=fatTotal-custoUSD;
+        const pctMargem=fatTotal>0?margemUSD/fatTotal*100:0;
+        const recBRL=comCusto.reduce((s,r)=>s+((r.valor_usd||0)*(r.taxa_cambio||0)),0);
+        const custoBRL=comCusto.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);
+        const liqBRL=recBRL-custoBRL;
+        const fmtBRL2=v=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:2}).format(v||0);
+
+        // Por agente
+        const byAgente={};
+        comCusto.forEach(r=>{
+          const ag=(r.agente||"—").split(" ")[0].split("-")[0].trim();
+          if(!byAgente[ag]) byAgente[ag]={fat:0,custo_brl:0,custo_usd:0,cnt:0};
+          byAgente[ag].fat+=(r.valor_usd||0);
+          byAgente[ag].custo_brl+=(r.custo_fatura_brl||0);
+          byAgente[ag].custo_usd+=(r.custo_fatura_brl||0)/(r.taxa_cambio||1);
+          byAgente[ag].cnt++;
+        });
+        const agentes=Object.entries(byAgente)
+          .map(([ag,d])=>({ag,cnt:d.cnt,fat:d.fat,custo_brl:d.custo_brl,custo_usd:d.custo_usd,
+            media_brl:d.custo_brl/d.cnt,
+            pct_custo:d.fat>0?d.custo_usd/d.fat*100:0,
+          }))
+          .sort((a,b)=>b.cnt-a.cnt);
+
+        // Por rota
+        const byRota={};
+        comCusto.forEach(r=>{
+          const k=`${r.porto_carga||"?"} → ${r.destino||"?"}`;
+          if(!byRota[k]) byRota[k]={fat:0,custo_brl:0,custo_usd:0,cnt:0};
+          byRota[k].fat+=(r.valor_usd||0);
+          byRota[k].custo_brl+=(r.custo_fatura_brl||0);
+          byRota[k].custo_usd+=(r.custo_fatura_brl||0)/(r.taxa_cambio||1);
+          byRota[k].cnt++;
+        });
+        const rotas=Object.entries(byRota)
+          .map(([rota,d])=>({rota,cnt:d.cnt,custo_brl:d.custo_brl,custo_usd:d.custo_usd,
+            media_brl:d.custo_brl/d.cnt,
+            pct_custo:d.fat>0?d.custo_usd/d.fat*100:0,
+          }))
+          .filter(r=>r.cnt>=2)
+          .sort((a,b)=>b.cnt-a.cnt)
+          .slice(0,8);
+
+        if(comCusto.length===0) return <div className="empty">Nenhum invoice com custo de frete cadastrado para o período.</div>;
+
+        return <>
+          {/* KPIs */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:20}}>
+            {[
+              {l:"Margem Real",v:fmtUSD(margemUSD),s:pctMargem.toFixed(1)+"% do faturamento",c:"#059669"},
+              {l:"Custo Total (USD)",v:fmtUSD(custoUSD),s:fmtBRL2(custoBRL),c:"#DC2626"},
+              {l:"Líquido Est. (BRL)",v:fmtBRL2(liqBRL),s:"receita BRL − custo BRL",c:"#7C3AED"},
+              {l:"Cobertura",v:comCusto.length+"/"+fil.length,s:semCusto.length>0?semCusto.length+" sem custo":"todos preenchidos",c:semCusto.length>0?"#D97706":"#059669"},
+            ].map((k,i)=>(
+              <div key={i} className="kp" style={{borderLeft:`3px solid ${k.c}`}}>
+                <div className="kl" style={{color:k.c}}>{k.l}</div>
+                <div className="kv" style={{fontSize:16,color:k.c}}>{k.v}</div>
+                <div className="ks">{k.s}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Ranking agentes */}
+          <div className="g2 mb20">
+            <div className="card">
+              <div className="ct">Custo por Agente de Carga</div>
+              <div className="tw" style={{marginTop:8}}><table>
+                <thead><tr>
+                  <th>Agente</th>
+                  <th className="r">Embarques</th>
+                  <th className="r">Custo Médio BRL</th>
+                  <th className="r">Custo Total BRL</th>
+                  <th className="r">% do Fat.</th>
+                </tr></thead>
+                <tbody>{agentes.map((a,i)=>(
+                  <tr key={i}>
+                    <td><strong>{a.ag}</strong></td>
+                    <td className="r">{a.cnt}</td>
+                    <td className="r" style={{fontVariantNumeric:"tabular-nums"}}>{fmtBRL2(a.media_brl)}</td>
+                    <td className="r" style={{fontVariantNumeric:"tabular-nums",color:"#DC2626"}}>{fmtBRL2(a.custo_brl)}</td>
+                    <td className="r">
+                      <span style={{color:a.pct_custo<10?"#059669":a.pct_custo<15?"#D97706":"#DC2626",fontWeight:600}}>
+                        {a.pct_custo.toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}</tbody>
+                <tfoot><tr style={{borderTop:"2px solid var(--border)"}}>
+                  <td><strong>TOTAL</strong></td>
+                  <td className="r" style={{fontWeight:600}}>{comCusto.length}</td>
+                  <td className="r" style={{fontWeight:600}}>{fmtBRL2(custoBRL/comCusto.length)}</td>
+                  <td className="r" style={{fontWeight:700,color:"#DC2626"}}>{fmtBRL2(custoBRL)}</td>
+                  <td className="r" style={{fontWeight:700}}>{fatTotal>0?(custoUSD/fatTotal*100).toFixed(1):0}%</td>
+                </tr></tfoot>
+              </table></div>
+            </div>
+
+            {/* Custo por rota */}
+            <div className="card">
+              <div className="ct">Custo Médio por Rota</div>
+              <div style={{marginTop:8}}>
+                {rotas.map((rota,i)=>(
+                  <div key={i} style={{marginBottom:10}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                      <span style={{fontWeight:500}}>{rota.rota}</span>
+                      <span style={{color:"var(--text2)"}}>
+                        {fmtBRL2(rota.media_brl)}
+                        <span style={{marginLeft:6,color:rota.pct_custo<10?"#059669":rota.pct_custo<15?"#D97706":"#DC2626",fontWeight:600}}>({rota.pct_custo.toFixed(1)}%)</span>
+                        <span style={{color:"var(--text3)",marginLeft:4,fontSize:10}}>{rota.cnt} embarques</span>
+                      </span>
+                    </div>
+                    <div style={{height:6,background:"var(--bg3)",borderRadius:3}}>
+                      <div style={{height:6,background:"#DC2626",borderRadius:3,width:Math.min(rota.pct_custo/20*100,100)+"%",transition:"width .4s"}}/>
+                    </div>
+                  </div>
+                ))}
+                <div style={{marginTop:10,padding:"8px 12px",background:"var(--bg3)",borderRadius:8,fontSize:11,color:"var(--text2)"}}>
+                  🟢 &lt;10% custo/fat · 🟡 10–15% · 🔴 &gt;15%  ·  Rotas com ≥ 2 embarques
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Margem real por cliente */}
+          <div className="card">
+            <div className="ct">Margem Real por Cliente</div>
+            <div className="tw" style={{marginTop:8}}><table>
+              <thead><tr>
+                <th>Cliente</th>
+                <th className="r">Fat. USD</th>
+                <th className="r">Custo USD</th>
+                <th className="r">Margem USD</th>
+                <th className="r">% Margem</th>
+                <th className="r">Líquido BRL</th>
+              </tr></thead>
+              <tbody>{(()=>{
+                const byCli={};
+                comCusto.forEach(r=>{
+                  const c=r.cliente||"—";
+                  if(!byCli[c]) byCli[c]={fat:0,custo_usd:0,rec_brl:0,custo_brl:0};
+                  byCli[c].fat+=(r.valor_usd||0);
+                  byCli[c].custo_usd+=(r.custo_fatura_brl||0)/(r.taxa_cambio||1);
+                  byCli[c].rec_brl+=(r.valor_usd||0)*(r.taxa_cambio||0);
+                  byCli[c].custo_brl+=(r.custo_fatura_brl||0);
+                });
+                return Object.entries(byCli).sort(([,a],[,b])=>b.fat-a.fat).map(([cli,d],i)=>{
+                  const margem=d.fat-d.custo_usd;
+                  const pct=d.fat>0?margem/d.fat*100:0;
+                  const liq=d.rec_brl-d.custo_brl;
+                  return <tr key={i}>
+                    <td><strong>{cli}</strong></td>
+                    <td className="r" style={{fontVariantNumeric:"tabular-nums"}}>{fmtUSD(d.fat)}</td>
+                    <td className="r" style={{color:"#DC2626",fontVariantNumeric:"tabular-nums"}}>{fmtUSD(d.custo_usd)}</td>
+                    <td className="r" style={{color:"#059669",fontWeight:500,fontVariantNumeric:"tabular-nums"}}>{fmtUSD(margem)}</td>
+                    <td className="r">
+                      <span style={{color:pct>=85?"#059669":pct>=75?"#D97706":"#DC2626",fontWeight:700}}>{pct.toFixed(1)}%</span>
+                    </td>
+                    <td className="r" style={{color:"#7C3AED",fontWeight:500,fontVariantNumeric:"tabular-nums"}}>{fmtBRL2(liq)}</td>
+                  </tr>;
+                });
+              })()}
+              </tbody>
+            </table></div>
+          </div>
+        </>;
+      })()}
+    </div>
+
   </div>;
 }
 
