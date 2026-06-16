@@ -1357,87 +1357,130 @@ function PgDash({recs, yr, setYr}) {
 
     {/* ── Evolução mensal da margem real ── */}
     {margemMensal.length>1&&<div className="card mb20">
-      <div className="ct">Evolução Mensal — Margem Real e Líquido BRL</div>
-      <div style={{overflowX:"auto",marginTop:12}}>
-        <div style={{display:"flex",gap:0,alignItems:"flex-end",height:120,minWidth:Math.max(400,margemMensal.length*60)}}>
-          {margemMensal.map((m,i)=>{
-            const maxM=Math.max(...margemMensal.map(x=>Math.abs(x.margem)),1);
-            const h=Math.round(Math.abs(m.margem)/maxM*90);
-            const pos=m.margem>=0;
-            return <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,minWidth:50}}>
-              <div style={{fontSize:10,fontWeight:600,color:pos?"#059669":"#DC2626"}}>{m.pct.toFixed(0)}%</div>
-              <div style={{width:"70%",height:h,background:pos?"#059669":"#DC2626",borderRadius:"3px 3px 0 0",transition:"height .4s",minHeight:4}}/>
-              <div style={{fontSize:10,color:"var(--text3)",marginTop:2}}>{m.l}</div>
-            </div>;
-          })}
-        </div>
-      </div>
-      <div style={{marginTop:10,display:"flex",gap:20,fontSize:11,color:"var(--text2)",flexWrap:"wrap"}}>
-        <span>🟢 Margem Real USD · 🟣 Líquido BRL</span>
-        {margemReal.cobertura<100&&<span style={{color:"#D97706"}}>⚠ {(100-margemReal.cobertura).toFixed(0)}% dos invoices sem custo cadastrado</span>}
-      </div>
+      <div className="ct">Evolução Mensal — Faturamento, Custo e Margem Real (USD)</div>
+      {margemMensal.length===0
+        ? <div className="empty">Sem dados com custo cadastrado no período</div>
+        : <div style={{overflowX:"auto",marginTop:12}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:Math.max(400,margemMensal.length*80)}}>
+              <thead>
+                <tr style={{borderBottom:"2px solid var(--border)"}}>
+                  <th style={{padding:"6px 10px",textAlign:"left",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase"}}>Mês</th>
+                  <th style={{padding:"6px 10px",textAlign:"right",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase"}}>Faturamento USD</th>
+                  <th style={{padding:"6px 10px",textAlign:"right",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase"}}>Custo USD</th>
+                  <th style={{padding:"6px 10px",textAlign:"right",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase"}}>Margem USD</th>
+                  <th style={{padding:"6px 10px",textAlign:"right",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase"}}>% Margem</th>
+                  <th style={{padding:"6px 10px",textAlign:"right",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase"}}>Líquido BRL</th>
+                  <th style={{padding:"6px 10px",color:"var(--text3)",fontWeight:500,fontSize:11,textTransform:"uppercase",minWidth:120}}>Visual</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(()=>{
+                  // Recalcular com valores completos
+                  const mData={};
+                  fil.filter(r=>r.custo_fatura_brl&&r.taxa_cambio&&r.mes_ref).forEach(r=>{
+                    const k=r.mes_ref;
+                    if(!mData[k]) mData[k]={fat:0,custo_usd:0,rec_brl:0,custo_brl:0,l:k.split(" ")[0].substring(0,3)};
+                    mData[k].fat+=(r.valor_usd||0);
+                    mData[k].custo_usd+=(r.custo_fatura_brl||0)/(r.taxa_cambio||1);
+                    mData[k].rec_brl+=(r.valor_usd||0)*(r.taxa_cambio||0);
+                    mData[k].custo_brl+=(r.custo_fatura_brl||0);
+                  });
+                  const rows=sortMesRef(Object.keys(mData)).map(k=>({...mData[k],k}));
+                  const maxFat=Math.max(...rows.map(r=>r.fat),1);
+                  const fmtBRL2=v=>new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL",minimumFractionDigits:0,maximumFractionDigits:0}).format(v||0);
+                  return rows.map((m,i)=>{
+                    const margem=m.fat-m.custo_usd;
+                    const pct=m.fat>0?margem/m.fat*100:0;
+                    const liq=m.rec_brl-m.custo_brl;
+                    const pctFat=m.fat/maxFat*100;
+                    const pctCusto=m.fat>0?m.custo_usd/m.fat*100:0;
+                    return <tr key={i} style={{borderBottom:"1px solid var(--border)"}}>
+                      <td style={{padding:"8px 10px",fontWeight:500}}>{m.l}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{fmtUSD(m.fat)}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:"#DC2626"}}>{fmtUSD(m.custo_usd)}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:"#059669",fontWeight:500}}>{fmtUSD(margem)}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,color:pct>=85?"#059669":pct>=75?"#D97706":"#DC2626"}}>{pct.toFixed(1)}%</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",fontVariantNumeric:"tabular-nums",color:"#7C3AED"}}>{fmtBRL2(liq)}</td>
+                      <td style={{padding:"8px 10px"}}>
+                        <div style={{height:6,background:"var(--bg3)",borderRadius:3,marginBottom:2}}>
+                          <div style={{height:6,background:"#059669",borderRadius:3,width:pct+"%"}}/>
+                        </div>
+                        <div style={{height:4,background:"var(--bg3)",borderRadius:3}}>
+                          <div style={{height:4,background:"#DC2626",borderRadius:3,width:pctCusto+"%"}}/>
+                        </div>
+                      </td>
+                    </tr>;
+                  });
+                })()}
+              </tbody>
+            </table>
+            <div style={{marginTop:8,display:"flex",gap:16,fontSize:11,color:"var(--text2)"}}>
+              <span>🟢 Barra verde = % margem &nbsp;·&nbsp; 🔴 Barra vermelha = % custo</span>
+              {margemReal.cobertura<100&&<span style={{color:"#D97706"}}>⚠ {(100-margemReal.cobertura).toFixed(0)}% dos invoices sem custo cadastrado</span>}
+            </div>
+          </div>}
     </div>}
 
     {/* ── Evolução PTAX mensal ── */}
     {ptaxMensal.length>1&&<div className="card mb20">
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
         <div className="ct" style={{marginBottom:0}}>Evolução da PTAX (USD/BRL) — Média Mensal</div>
-        <div style={{display:"flex",gap:16,fontSize:11,color:"var(--text2)"}}>
+        <div style={{display:"flex",gap:16,fontSize:12}}>
           <span>Mínima: <strong style={{color:"#059669"}}>R$ {Math.min(...ptaxMensal.map(m=>m.media)).toFixed(4)}</strong></span>
           <span>Máxima: <strong style={{color:"#DC2626"}}>R$ {Math.max(...ptaxMensal.map(m=>m.media)).toFixed(4)}</strong></span>
           <span>Atual: <strong style={{color:"var(--blue)"}}>R$ {ptaxMensal[ptaxMensal.length-1].media.toFixed(4)}</strong></span>
         </div>
       </div>
-      <div style={{overflowX:"auto"}}>
-        <div style={{minWidth:Math.max(400,ptaxMensal.length*60),position:"relative"}}>
-          {/* Grid lines */}
-          {(()=>{
-            const min=Math.min(...ptaxMensal.map(m=>m.media));
-            const max=Math.max(...ptaxMensal.map(m=>m.media));
-            const range=max-min||0.1;
-            const H=100;
-            const pts=ptaxMensal.map((m,i)=>({
-              x: ptaxMensal.length===1?50:(i/(ptaxMensal.length-1)*100),
-              y: H-((m.media-min)/range*(H-20))-10,
-              m,
-            }));
-            const pathD=pts.map((p,i)=>`${i===0?"M":"L"} ${p.x}% ${p.y}`).join(" ");
-            return <div style={{position:"relative",height:H+40}}>
-              {/* SVG line */}
-              <svg style={{position:"absolute",top:0,left:0,width:"100%",height:H}} preserveAspectRatio="none" viewBox={`0 0 100 ${H}`}>
-                <polyline points={pts.map(p=>`${p.x},${p.y}`).join(" ")} fill="none" stroke="var(--blue)" strokeWidth="0.8" vectorEffect="non-scaling-stroke"/>
-                {pts.map((p,i)=><circle key={i} cx={p.x} cy={p.y} r="2.5" fill="var(--blue)" vectorEffect="non-scaling-stroke"/>)}
-                {/* Area fill */}
-                <polygon points={`${pts[0].x},${H} ${pts.map(p=>`${p.x},${p.y}`).join(" ")} ${pts[pts.length-1].x},${H}`} fill="var(--blue)" fillOpacity="0.06"/>
-              </svg>
-              {/* Labels */}
-              <div style={{display:"flex",position:"absolute",bottom:0,left:0,right:0,justifyContent:"space-between",padding:"0 4px"}}>
-                {pts.map((p,i)=>(
-                  <div key={i} style={{textAlign:"center",minWidth:0,flex:1}}>
-                    <div style={{fontSize:10,fontWeight:600,color:"var(--blue)"}}>{p.m.media.toFixed(3)}</div>
-                    <div style={{fontSize:9,color:"var(--text3)"}}>{p.m.mes}</div>
-                  </div>
-                ))}
-              </div>
-            </div>;
-          })()}
-        </div>
-      </div>
+      {(()=>{
+        const W=600, H=140, padL=0, padR=0, padT=30, padB=32;
+        const chartW=W, chartH=H-padT-padB;
+        const min=Math.min(...ptaxMensal.map(m=>m.media));
+        const max=Math.max(...ptaxMensal.map(m=>m.media));
+        const range=max-min||0.01;
+        const n=ptaxMensal.length;
+        const pts=ptaxMensal.map((m,i)=>({
+          x: n===1 ? W/2 : padL + i/(n-1)*(W-padL-padR),
+          y: padT + (1-(m.media-min)/range)*chartH,
+          m,
+        }));
+        const polyPts=pts.map(p=>`${p.x},${p.y}`).join(" ");
+        const areaClose=`${pts[pts.length-1].x},${H-padB} ${pts[0].x},${H-padB}`;
+        return <div style={{overflowX:"auto"}}>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",maxWidth:W,display:"block",margin:"0 auto"}}>
+            {/* Area */}
+            <polygon points={`${polyPts} ${areaClose}`} fill="var(--blue)" fillOpacity="0.08"/>
+            {/* Line */}
+            <polyline points={polyPts} fill="none" stroke="var(--blue)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+            {/* Points + labels */}
+            {pts.map((p,i)=>(
+              <g key={i}>
+                <circle cx={p.x} cy={p.y} r="4" fill="var(--blue)" stroke="white" strokeWidth="1.5"/>
+                {/* Value above */}
+                <text x={p.x} y={p.y-10} textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--blue)">{p.m.media.toFixed(3)}</text>
+                {/* Month below */}
+                <text x={p.x} y={H-padB+14} textAnchor="middle" fontSize="10" fill="var(--text3)">{p.m.mes}</text>
+              </g>
+            ))}
+            {/* Min/Max dashed lines */}
+            <line x1={padL} y1={padT} x2={W-padR} y2={padT} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="3,3"/>
+            <line x1={padL} y1={H-padB} x2={W-padR} y2={H-padB} stroke="var(--border)" strokeWidth="0.5" strokeDasharray="3,3"/>
+          </svg>
+        </div>;
+      })()}
       {(()=>{
         if(ptaxMensal.length<2) return null;
         const first=ptaxMensal[0].media;
         const last=ptaxMensal[ptaxMensal.length-1].media;
         const var_abs=last-first;
         const var_pct=(var_abs/first)*100;
-        const impacto=margemReal.cnt>0?(margemReal.fatTotal*var_abs).toFixed(0):null;
-        return <div style={{marginTop:8,padding:"8px 12px",background:"var(--bg3)",borderRadius:8,fontSize:11,color:"var(--text2)",display:"flex",gap:20,flexWrap:"wrap"}}>
+        const impacto=margemReal.cnt>0?(margemReal.fatTotal*var_abs):null;
+        return <div style={{marginTop:8,padding:"8px 12px",background:"var(--bg3)",borderRadius:8,fontSize:12,color:"var(--text2)",display:"flex",gap:24,flexWrap:"wrap",alignItems:"center"}}>
           <span>Variação no período: <strong style={{color:var_abs>=0?"#DC2626":"#059669"}}>{var_abs>=0?"+":""}{var_abs.toFixed(4)} ({var_pct>=0?"+":""}{var_pct.toFixed(1)}%)</strong></span>
-          {impacto&&<span>Impacto estimado no faturamento BRL: <strong style={{color:var_abs>=0?"#059669":"#DC2626"}}>{var_abs>=0?"+":""}R$ {parseFloat(impacto).toLocaleString("pt-BR",{minimumFractionDigits:0})}</strong></span>}
+          {impacto!=null&&<span>Impacto est. no faturamento BRL: <strong style={{color:var_abs>=0?"#059669":"#DC2626"}}>{var_abs>=0?"+":""}R$ {Math.abs(impacto).toLocaleString("pt-BR",{maximumFractionDigits:0})}</strong></span>}
           <span style={{color:"var(--text3)"}}>{ptaxMensal.reduce((s,m)=>s+m.cnt,0)} invoices com taxa cadastrada</span>
         </div>;
       })()}
     </div>}
-
     {/* ── Margem bruta e Concentração — sempre visíveis ── */}
     <div className="g2 mb20">
       <div className="card">
