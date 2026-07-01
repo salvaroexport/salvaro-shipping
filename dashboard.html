@@ -366,13 +366,14 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
     if(itens.length>0) acc[cat]=itens;
     return acc;
   },{});
+  const[linhasEdit,setLinhasEdit]=useState({});
   const EditCell=({c,field})=>React.createElement("input",{
-    type:"number",step:"0.01",
-    defaultValue:c[field]||"",
-    style:{width:"100%",minWidth:160,border:"1px solid var(--border)",borderRadius:6,background:"var(--bg3)",textAlign:"right",fontSize:13,padding:"8px 10px",boxSizing:"border-box",MozAppearance:"textfield",WebkitAppearance:"none"},
-    onBlur:e=>salvarCampo(c.id,field,e.target.value),
+    type:"text",inputMode:"decimal",
+    value:(linhasEdit[c.id]&&linhasEdit[c.id][field]!==undefined?linhasEdit[c.id][field]:c[field])||"",
+    onChange:e=>setLinhasEdit(prev=>({...prev,[c.id]:{...(prev[c.id]||{}),[field]:e.target.value}})),
     onFocus:e=>e.target.select(),
-    placeholder:"—"
+    style:{width:"100%",minWidth:160,border:"1px solid var(--border)",borderRadius:6,background:"var(--bg3)",textAlign:"right",fontSize:13,padding:"8px 10px",boxSizing:"border-box"},
+    placeholder:"0,00"
   });
   return React.createElement("div",{className:"page"},
     React.createElement("div",{className:"ph"},
@@ -408,21 +409,48 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
         React.createElement("div",null,"Destino: ",React.createElement("strong",null,invoiceSel.destino||"—")),
         invoiceSel.nf&&React.createElement("div",null,"NF: ",React.createElement("strong",null,invoiceSel.nf))
       ),
-      React.createElement("div",{style:{display:"flex",gap:12,alignItems:"flex-end",marginBottom:16,padding:"12px 16px",background:"var(--bg3)",borderRadius:10,flexWrap:"wrap"}},
-        React.createElement("div",{style:{fontWeight:600,fontSize:12,color:"var(--text2)",minWidth:120}},"PTAX da Fatura"),
-        React.createElement("div",{className:"field",style:{marginBottom:0,flex:1,maxWidth:200}},
-          React.createElement("label",null,"Orçado (USD)"),
-          React.createElement("input",{type:"text",inputMode:"decimal",defaultValue:ptax.ptax_orcado||"",key:"po-"+(invoiceSel?.invoice||"new"),onBlur:e=>{const v=e.target.value;setPtax(p=>({...p,ptax_orcado:v}));salvarPtax("ptax_orcado",v);},onFocus:e=>e.target.select(),placeholder:"ex: 5.6112"})
-        ),
-        React.createElement("div",{className:"field",style:{marginBottom:0,flex:1,maxWidth:200}},
-          React.createElement("label",null,"Realizado (USD)"),
-          React.createElement("input",{type:"text",inputMode:"decimal",defaultValue:ptax.ptax_realizado||"",key:"pr-"+(invoiceSel?.invoice||"new"),onBlur:e=>{const v=e.target.value;setPtax(p=>({...p,ptax_realizado:v}));salvarPtax("ptax_realizado",v);},onFocus:e=>e.target.select(),placeholder:"ex: 5.5462"})
-        ),
-        ptax.ptax_orcado&&ptax.ptax_realizado&&React.createElement("div",{style:{fontSize:12,color:"var(--text2)"}},
-          "Variação: ",React.createElement("strong",{style:{color:parseFloat(ptax.ptax_realizado)>parseFloat(ptax.ptax_orcado)?"#DC2626":"#059669"}},
-            ((parseFloat(ptax.ptax_realizado)-parseFloat(ptax.ptax_orcado))/parseFloat(ptax.ptax_orcado)*100).toFixed(2),"%"
+      React.createElement("div",{style:{background:"var(--bg3)",borderRadius:10,padding:"12px 16px",marginBottom:16}},
+        React.createElement("div",{style:{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap",marginBottom:12}},
+          React.createElement("div",{style:{fontWeight:600,fontSize:12,color:"var(--text2)",minWidth:120,paddingBottom:6}},"PTAX da Fatura"),
+          React.createElement("div",{className:"field",style:{marginBottom:0,flex:1,maxWidth:200}},
+            React.createElement("label",null,"Orçado (USD)"),
+            React.createElement("input",{type:"text",inputMode:"decimal",value:ptax.ptax_orcado||"",
+              onChange:e=>setPtax(p=>({...p,ptax_orcado:e.target.value})),
+              onFocus:e=>e.target.select(),
+              placeholder:"ex: 5.6112"})
+          ),
+          React.createElement("div",{className:"field",style:{marginBottom:0,flex:1,maxWidth:200}},
+            React.createElement("label",null,"Realizado (USD)"),
+            React.createElement("input",{type:"text",inputMode:"decimal",value:ptax.ptax_realizado||"",
+              onChange:e=>setPtax(p=>({...p,ptax_realizado:e.target.value})),
+              onFocus:e=>e.target.select(),
+              placeholder:"ex: 5.5462"})
+          ),
+          ptax.ptax_orcado&&ptax.ptax_realizado&&React.createElement("div",{style:{fontSize:12,color:"var(--text2)",paddingBottom:6}},
+            "Variação: ",React.createElement("strong",{style:{color:parseFloat(ptax.ptax_realizado)>parseFloat(ptax.ptax_orcado)?"#DC2626":"#059669"}},
+              ((parseFloat(ptax.ptax_realizado)-parseFloat(ptax.ptax_orcado))/parseFloat(ptax.ptax_orcado)*100).toFixed(2),"%"
+            )
           )
-        )
+        ),
+        React.createElement("button",{
+          className:"btn bgb bsm",
+          disabled:saving,
+          onClick:async()=>{
+            setSaving(true);
+            /* Salvar PTAX */
+            await salvarPtax("ptax_orcado",ptax.ptax_orcado);
+            /* Salvar todas as linhas editadas */
+            const updates=Object.entries(linhasEdit);
+            for(const[id,fields] of updates){
+              for(const[field,value] of Object.entries(fields)){
+                await salvarCampo(id,field,value);
+              }
+            }
+            setLinhasEdit({});
+            setSaving(false);
+            notify("Fatura salva com sucesso! ✓");
+          }
+        },saving?"Salvando...":"💾 Salvar Fatura")
       ),
       totalOrcBRL>0||totalRealBRL>0?React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:16}},
         [{l:"Total Orçado (BRL)",v:fmtBRL(totalOrcBRL),c:"#7C3AED"},{l:"Total Realizado (BRL)",v:fmtBRL(totalRealBRL),c:"#DC2626"},{l:"Variação",v:(varBRL>=0?"+":"")+fmtBRL(varBRL),c:varBRL<=0?"#059669":"#DC2626"},{l:"% Variação",v:totalOrcBRL>0?(varBRL/totalOrcBRL*100).toFixed(1)+"%":"—",c:varBRL<=0?"#059669":"#DC2626"}].map((k,i)=>
