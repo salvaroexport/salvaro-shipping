@@ -320,10 +320,10 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
   }
   async function salvarPtax(field,value){
     if(!invoiceSel) return;
-    const v=value===""?null:parseFloat(value)||null;
-    // Converter todos os campos para número antes de salvar
-    const ptaxOrcNum=field==="ptax_orcado"?v:(ptax.ptax_orcado!==""&&ptax.ptax_orcado!=null?parseFloat(ptax.ptax_orcado)||null:null);
-    const ptaxRealNum=field==="ptax_realizado"?v:(ptax.ptax_realizado!==""&&ptax.ptax_realizado!=null?parseFloat(ptax.ptax_realizado)||null:null);
+    const toNum=s=>(s===""||s==null)?null:Number(s);
+    const v=toNum(value);
+    const ptaxOrcNum=field==="ptax_orcado"?v:toNum(ptax.ptax_orcado);
+    const ptaxRealNum=field==="ptax_realizado"?v:toNum(ptax.ptax_realizado);
     const payload={invoice:invoiceSel.invoice,ptax_orcado:ptaxOrcNum,ptax_realizado:ptaxRealNum};
     const{error}=await db.from("custos_ptax").upsert(payload,{onConflict:"invoice"});
     if(error){notify("Erro ao salvar PTAX: "+error.message,"err");return;}
