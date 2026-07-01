@@ -278,8 +278,11 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
     const{data:inv}=await db.from("exportacoes").select("invoice,cliente,mes_ref,valor_usd,frete_usd,taxa_cambio,agente,destino,nf").eq("invoice",parseInt(busca)).single();
     if(!inv){notify("Invoice não encontrado","err");setLoading(false);return;}
     const{data:custs}=await db.from("custos_detalhados").select("*").eq("invoice",parseInt(busca)).order("created_at");
-    const{data:ptaxData}=await db.from("custos_ptax").select("*").eq("invoice",parseInt(busca)).single();
-    setPtax(ptaxData||{ptax_orcado:"",ptax_realizado:""});
+    const{data:ptaxData}=await db.from("custos_ptax").select("ptax_orcado,ptax_realizado").eq("invoice",parseInt(busca)).single();
+    setPtax({
+      ptax_orcado: ptaxData?.ptax_orcado!=null ? String(ptaxData.ptax_orcado) : "",
+      ptax_realizado: ptaxData?.ptax_realizado!=null ? String(ptaxData.ptax_realizado) : ""
+    });
     /* Se não tem nenhuma linha (invoice novo), pré-criar todas as subcategorias fixas */
     const linhasExistentes=custs||[];
     if(linhasExistentes.length===0){
