@@ -312,12 +312,15 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
     setInvoiceSel(inv);setCustos(linhasExistentes);setLoading(false);
   }
   async function salvarPtax(field,value){
-    const v=value===""?null:parseFloat(value)||null;
     if(!invoiceSel) return;
-    const novo={...ptax,[field]:v};
-    setPtax(novo);
-    // upsert: cria ou atualiza o registro de PTAX deste invoice
-    await db.from("custos_ptax").upsert({invoice:invoiceSel.invoice,...novo},{onConflict:"invoice"});
+    const v=value===""?null:parseFloat(value)||null;
+    // Converter todos os campos para número antes de salvar
+    const ptaxOrcNum=field==="ptax_orcado"?v:(ptax.ptax_orcado!==""&&ptax.ptax_orcado!=null?parseFloat(ptax.ptax_orcado)||null:null);
+    const ptaxRealNum=field==="ptax_realizado"?v:(ptax.ptax_realizado!==""&&ptax.ptax_realizado!=null?parseFloat(ptax.ptax_realizado)||null:null);
+    const payload={invoice:invoiceSel.invoice,ptax_orcado:ptaxOrcNum,ptax_realizado:ptaxRealNum};
+    const{error}=await db.from("custos_ptax").upsert(payload,{onConflict:"invoice"});
+    if(error){notify("Erro ao salvar PTAX: "+error.message,"err");return;}
+    setPtax({ptax_orcado:ptaxOrcNum??(""),ptax_realizado:ptaxRealNum??("")});
   }
   async function salvarCampo(id,field,value){
     const v=value===""?null:isNaN(Number(value))?value:Number(value);
