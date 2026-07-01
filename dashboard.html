@@ -26,6 +26,13 @@ body{background:#F0F2F5;color:#1A2B3C}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes sp{to{transform:rotate(360deg)}}
 @keyframes su{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
+/* Remove setas/spinner de inputs numéricos em todos os browsers */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 </style>
 </head>
 <body>
@@ -359,11 +366,12 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
     if(itens.length>0) acc[cat]=itens;
     return acc;
   },{});
-  const EditCell=({c,field,tipo})=>React.createElement("input",{
+  const EditCell=({c,field})=>React.createElement("input",{
     type:"number",step:"0.01",
     defaultValue:c[field]||"",
-    style:{width:"100%",border:"none",background:"transparent",textAlign:"right",fontSize:12},
+    style:{width:"100%",minWidth:160,border:"1px solid var(--border)",borderRadius:6,background:"var(--bg3)",textAlign:"right",fontSize:13,padding:"8px 10px",boxSizing:"border-box",MozAppearance:"textfield",WebkitAppearance:"none"},
     onBlur:e=>salvarCampo(c.id,field,e.target.value),
+    onFocus:e=>e.target.select(),
     placeholder:"—"
   });
   return React.createElement("div",{className:"page"},
@@ -404,17 +412,19 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
         React.createElement("div",{style:{fontWeight:600,fontSize:12,color:"var(--text2)",minWidth:120}},"PTAX da Fatura"),
         React.createElement("div",{className:"field",style:{marginBottom:0,flex:1,maxWidth:200}},
           React.createElement("label",null,"Orçado (USD)"),
-          React.createElement("input",{type:"number",step:"0.0001",value:ptax.ptax_orcado||"",
+          React.createElement("input",{type:"text",inputMode:"decimal",value:ptax.ptax_orcado||"",
             onChange:e=>setPtax(p=>({...p,ptax_orcado:e.target.value})),
             onBlur:e=>salvarPtax("ptax_orcado",e.target.value),
-            placeholder:"ex: 5.6112"})
+            onFocus:e=>e.target.select(),
+            placeholder:"ex: 5.6112",style:{MozAppearance:"textfield",WebkitAppearance:"none"}})
         ),
         React.createElement("div",{className:"field",style:{marginBottom:0,flex:1,maxWidth:200}},
           React.createElement("label",null,"Realizado (USD)"),
-          React.createElement("input",{type:"number",step:"0.0001",value:ptax.ptax_realizado||"",
+          React.createElement("input",{type:"text",inputMode:"decimal",value:ptax.ptax_realizado||"",
             onChange:e=>setPtax(p=>({...p,ptax_realizado:e.target.value})),
             onBlur:e=>salvarPtax("ptax_realizado",e.target.value),
-            placeholder:"ex: 5.5462"})
+            onFocus:e=>e.target.select(),
+            placeholder:"ex: 5.5462",style:{MozAppearance:"textfield",WebkitAppearance:"none"}})
         ),
         ptax.ptax_orcado&&ptax.ptax_realizado&&React.createElement("div",{style:{fontSize:12,color:"var(--text2)"}},
           "Variação: ",React.createElement("strong",{style:{color:parseFloat(ptax.ptax_realizado)>parseFloat(ptax.ptax_orcado)?"#DC2626":"#059669"}},
