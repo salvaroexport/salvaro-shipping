@@ -274,7 +274,43 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
     const{data:inv}=await db.from("exportacoes").select("invoice,cliente,mes_ref,valor_usd,frete_usd,taxa_cambio,agente,destino,nf").eq("invoice",parseInt(busca)).single();
     if(!inv){notify("Invoice não encontrado","err");setLoading(false);return;}
     const{data:custs}=await db.from("custos_detalhados").select("*").eq("invoice",parseInt(busca)).order("created_at");
-    setInvoiceSel(inv);setCustos(custs||[]);setLoading(false);
+    /* Se não tem nenhuma linha (invoice novo), pré-criar todas as subcategorias fixas */
+    const linhasExistentes=custs||[];
+    if(linhasExistentes.length===0){
+      const LINHAS_PADRAO=[
+        {categoria:"Frete Marítimo",subcategoria:"Frete Marítimo"},
+        {categoria:"Frete Marítimo",subcategoria:"Seguro Internacional"},
+        {categoria:"Frete Marítimo",subcategoria:"Detention"},
+        {categoria:"Taxas Origem",subcategoria:"THC"},
+        {categoria:"Taxas Origem",subcategoria:"BL Fee"},
+        {categoria:"Taxas Origem",subcategoria:"BL Manifest"},
+        {categoria:"Taxas Origem",subcategoria:"Capatazia"},
+        {categoria:"Taxas Origem",subcategoria:"AMS"},
+        {categoria:"Taxas Origem",subcategoria:"ISF"},
+        {categoria:"Taxas Origem",subcategoria:"VGM"},
+        {categoria:"Taxas Origem",subcategoria:"Export Service Fee"},
+        {categoria:"Taxas Origem",subcategoria:"ISPS"},
+        {categoria:"Taxas Origem",subcategoria:"ELF"},
+        {categoria:"Taxas Origem",subcategoria:"Express Release"},
+        {categoria:"Taxas Origem",subcategoria:"DOC Fee"},
+        {categoria:"Taxas Origem",subcategoria:"EBS"},
+        {categoria:"Taxas Origem",subcategoria:"IOF"},
+        {categoria:"Taxas Origem",subcategoria:"Handling Destino"},
+        {categoria:"Porto",subcategoria:"Controle de Acesso"},
+        {categoria:"Porto",subcategoria:"Scanner"},
+        {categoria:"Porto",subcategoria:"Recebimento de Container"},
+        {categoria:"Porto",subcategoria:"Pesagem"},
+        {categoria:"Porto",subcategoria:"Armazenagem"},
+        {categoria:"Porto",subcategoria:"Recebimento de Bi-trem"},
+        {categoria:"Transportadora",subcategoria:"Frete Rodoviário"},
+        {categoria:"Transportadora",subcategoria:"Pre-stacking"},
+        {categoria:"Transportadora",subcategoria:"Coleta Antecipada"},
+      ].map(l=>({...l,invoice:parseInt(busca)}));
+      const{data:novas}=await db.from("custos_detalhados").insert(LINHAS_PADRAO).select();
+      setInvoiceSel(inv);setCustos(novas||[]);setLoading(false);
+      return;
+    }
+    setInvoiceSel(inv);setCustos(linhasExistentes);setLoading(false);
   }
   async function salvarCampo(id,field,value){
     const v=value===""?null:isNaN(Number(value))?value:Number(value);
