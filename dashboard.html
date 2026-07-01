@@ -420,14 +420,14 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
             React.createElement("input",{type:"text",inputMode:"decimal",value:ptax.ptax_orcado||"",
               onChange:e=>setPtax(p=>({...p,ptax_orcado:e.target.value})),
               onFocus:e=>e.target.select(),
-              placeholder:"ex: 5.6112"})
+              placeholder:"ex: 5.8500"})
           ),
           React.createElement("div",{className:"field",style:{marginBottom:0,flex:1,maxWidth:200}},
             React.createElement("label",null,"Realizado (USD)"),
             React.createElement("input",{type:"text",inputMode:"decimal",value:ptax.ptax_realizado||"",
               onChange:e=>setPtax(p=>({...p,ptax_realizado:e.target.value})),
               onFocus:e=>e.target.select(),
-              placeholder:"ex: 5.5462"})
+              placeholder:"ex: 5.8500"})
           ),
           ptax.ptax_orcado&&ptax.ptax_realizado&&React.createElement("div",{style:{fontSize:12,color:"var(--text2)",paddingBottom:6}},
             "Variação: ",React.createElement("strong",{style:{color:parseFloat(ptax.ptax_realizado)>parseFloat(ptax.ptax_orcado)?"#DC2626":"#059669"}},
@@ -447,7 +447,9 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
               ptax_orcado:toNum(ptax.ptax_orcado),
               ptax_realizado:toNum(ptax.ptax_realizado)
             };
+            console.log("Salvando PTAX payload:",JSON.stringify(payload));
             const{error:ePtax}=await db.from("custos_ptax").upsert(payload,{onConflict:"invoice"});
+            console.log("Resultado upsert:",ePtax?"ERRO:"+ePtax.message:"OK");
             if(ePtax){notify("Erro ao salvar PTAX: "+ePtax.message,"err");setSaving(false);return;}
             /* Salvar todas as linhas editadas */
             const updates=Object.entries(linhasEdit);
