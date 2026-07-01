@@ -412,19 +412,11 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
         React.createElement("div",{style:{fontWeight:600,fontSize:12,color:"var(--text2)",minWidth:120}},"PTAX da Fatura"),
         React.createElement("div",{className:"field",style:{marginBottom:0,flex:1,maxWidth:200}},
           React.createElement("label",null,"Orçado (USD)"),
-          React.createElement("input",{type:"text",inputMode:"decimal",value:ptax.ptax_orcado||"",
-            onChange:e=>setPtax(p=>({...p,ptax_orcado:e.target.value})),
-            onBlur:e=>salvarPtax("ptax_orcado",e.target.value),
-            onFocus:e=>e.target.select(),
-            placeholder:"ex: 5.6112",style:{MozAppearance:"textfield",WebkitAppearance:"none"}})
+          React.createElement("input",{type:"text",inputMode:"decimal",defaultValue:ptax.ptax_orcado||"",key:"po-"+(invoiceSel?.invoice||"new"),onBlur:e=>{const v=e.target.value;setPtax(p=>({...p,ptax_orcado:v}));salvarPtax("ptax_orcado",v);},onFocus:e=>e.target.select(),placeholder:"ex: 5.6112"})
         ),
         React.createElement("div",{className:"field",style:{marginBottom:0,flex:1,maxWidth:200}},
           React.createElement("label",null,"Realizado (USD)"),
-          React.createElement("input",{type:"text",inputMode:"decimal",value:ptax.ptax_realizado||"",
-            onChange:e=>setPtax(p=>({...p,ptax_realizado:e.target.value})),
-            onBlur:e=>salvarPtax("ptax_realizado",e.target.value),
-            onFocus:e=>e.target.select(),
-            placeholder:"ex: 5.5462",style:{MozAppearance:"textfield",WebkitAppearance:"none"}})
+          React.createElement("input",{type:"text",inputMode:"decimal",defaultValue:ptax.ptax_realizado||"",key:"pr-"+(invoiceSel?.invoice||"new"),onBlur:e=>{const v=e.target.value;setPtax(p=>({...p,ptax_realizado:v}));salvarPtax("ptax_realizado",v);},onFocus:e=>e.target.select(),placeholder:"ex: 5.5462"})
         ),
         ptax.ptax_orcado&&ptax.ptax_realizado&&React.createElement("div",{style:{fontSize:12,color:"var(--text2)"}},
           "Variação: ",React.createElement("strong",{style:{color:parseFloat(ptax.ptax_realizado)>parseFloat(ptax.ptax_orcado)?"#DC2626":"#059669"}},
