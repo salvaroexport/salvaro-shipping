@@ -437,8 +437,15 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
           disabled:saving,
           onClick:async()=>{
             setSaving(true);
-            /* Salvar PTAX */
-            await salvarPtax("ptax_orcado",ptax.ptax_orcado);
+            /* Salvar PTAX — usar valores do estado diretamente */
+            const toNum=s=>(s===""||s==null)?null:Number(s);
+            const payload={
+              invoice:invoiceSel.invoice,
+              ptax_orcado:toNum(ptax.ptax_orcado),
+              ptax_realizado:toNum(ptax.ptax_realizado)
+            };
+            const{error:ePtax}=await db.from("custos_ptax").upsert(payload,{onConflict:"invoice"});
+            if(ePtax){notify("Erro ao salvar PTAX: "+ePtax.message,"err");setSaving(false);return;}
             /* Salvar todas as linhas editadas */
             const updates=Object.entries(linhasEdit);
             for(const[id,fields] of updates){
