@@ -321,9 +321,23 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
     }
     setInvoiceSel(inv);setCustos(linhasExistentes);setLoading(false);
   }
+  function parseNumBR(raw){
+    if(raw==null) return null;
+    let str=String(raw).trim();
+    if(str==="") return null;
+    str=str.replace(/[^\d,.\-]/g,"");
+    if(str==="") return null;
+    if(str.includes(",")){
+      /* vírgula = separador decimal (padrão BR); pontos remanescentes são milhar */
+      str=str.replace(/\./g,"").replace(",",".");
+    }
+    const n=Number(str);
+    return isNaN(n)?null:n;
+  }
   async function salvarCampo(id,field,value){
-    const v=value===""?null:isNaN(Number(value))?value:Number(value);
-    await db.from("custos_detalhados").update({[field]:v}).eq("id",id);
+    const v=parseNumBR(value);
+    const{error}=await db.from("custos_detalhados").update({[field]:v}).eq("id",id);
+    if(error){notify("Erro ao salvar "+field+": "+error.message,"err");return;}
     setCustos(prev=>prev.map(c=>c.id===id?{...c,[field]:v}:c));
   }
   async function adicionarLinha(){
@@ -343,12 +357,21 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
     notify("Linha removida");
   }
   const ptaxNum=Number(String(ptaxLocal).replace(",","."))||0;
+  const numBR=raw=>{
+    if(raw==null||raw==="") return 0;
+    if(typeof raw==="number") return isNaN(raw)?0:raw;
+    let str=String(raw).trim().replace(/[^\d,.\-]/g,"");
+    if(str==="") return 0;
+    if(str.includes(",")) str=str.replace(/\./g,"").replace(",",".");
+    const n=Number(str);
+    return isNaN(n)?0:n;
+  };
   const totalOrcBRL=custos.reduce((s,c)=>{
-    const brl=(c.orcado_brl||0)+(c.orcado_usd&&ptaxNum?c.orcado_usd*ptaxNum:0);
+    const brl=numBR(c.orcado_brl)+(ptaxNum?numBR(c.orcado_usd)*ptaxNum:0);
     return s+brl;
   },0);
   const totalRealBRL=custos.reduce((s,c)=>{
-    const brl=(c.realizado_brl||0)+(c.realizado_usd&&ptaxNum?c.realizado_usd*ptaxNum:0);
+    const brl=numBR(c.realizado_brl)+(ptaxNum?numBR(c.realizado_usd)*ptaxNum:0);
     return s+brl;
   },0);
   const varBRL=totalRealBRL-totalOrcBRL;
@@ -450,8 +473,8 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
       Object.keys(CATEGORIAS).map(cat=>{
         const itens=custos.filter(c=>c.categoria===cat);
         if(itens.length===0) return null;
-        const catTotalOrc=itens.reduce((s,c)=>s+(c.orcado_brl||0)+(c.orcado_usd&&ptaxNum?c.orcado_usd*ptaxNum:0),0);
-        const catTotalReal=itens.reduce((s,c)=>s+(c.realizado_brl||0)+(c.realizado_usd&&ptaxNum?c.realizado_usd*ptaxNum:0),0);
+        const catTotalOrc=itens.reduce((s,c)=>s+numBR(c.orcado_brl)+(ptaxNum?numBR(c.orcado_usd)*ptaxNum:0),0);
+        const catTotalReal=itens.reduce((s,c)=>s+numBR(c.realizado_brl)+(ptaxNum?numBR(c.realizado_usd)*ptaxNum:0),0);
         return React.createElement("div",{key:cat,className:"card",style:{marginBottom:12}},
           React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}},
             React.createElement("div",{className:"ct",style:{marginBottom:0}},cat),
@@ -473,8 +496,8 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
                 React.createElement("th",null,"")
               )),
               React.createElement("tbody",null,itens.map((c,i)=>{
-                const orcBRL=(c.orcado_brl||0)+(c.orcado_usd&&ptaxNum?c.orcado_usd*ptaxNum:0);
-                const realBRL=(c.realizado_brl||0)+(c.realizado_usd&&ptaxNum?c.realizado_usd*ptaxNum:0);
+                const orcBRL=numBR(c.orcado_brl)+(ptaxNum?numBR(c.orcado_usd)*ptaxNum:0);
+                const realBRL=numBR(c.realizado_brl)+(ptaxNum?numBR(c.realizado_usd)*ptaxNum:0);
                 const vari=realBRL-orcBRL;
                 const isMig=c.subcategoria==="Total Agente (migrado)";
                 return React.createElement("tr",{key:c.id,style:{background:i%2===0?"var(--bg3)":"transparent"}},
