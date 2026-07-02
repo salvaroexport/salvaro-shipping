@@ -358,14 +358,16 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
     return acc;
   },{});
   const[linhasEdit,setLinhasEdit]=useState({});
-  const EditCell=({c,field})=>React.createElement("input",{
+  /* EditCell usa defaultValue+onBlur para evitar re-render a cada tecla */
+  const EditCell=useCallback(({c,field})=>React.createElement("input",{
     type:"text",inputMode:"decimal",
-    value:(linhasEdit[c.id]&&linhasEdit[c.id][field]!==undefined?linhasEdit[c.id][field]:c[field])||"",
-    onChange:e=>setLinhasEdit(prev=>({...prev,[c.id]:{...(prev[c.id]||{}),[field]:e.target.value}})),
+    key:c.id+"-"+field,
+    defaultValue:(linhasEdit[c.id]&&linhasEdit[c.id][field]!==undefined?linhasEdit[c.id][field]:c[field])||"",
+    onBlur:e=>setLinhasEdit(prev=>({...prev,[c.id]:{...(prev[c.id]||{}),[field]:e.target.value}})),
     onFocus:e=>e.target.select(),
     style:{width:"100%",minWidth:160,border:"1px solid var(--border)",borderRadius:6,background:"var(--bg3)",textAlign:"right",fontSize:13,padding:"8px 10px",boxSizing:"border-box"},
     placeholder:"0,00"
-  });
+  }),[]);
   return React.createElement("div",{className:"page"},
     React.createElement("div",{className:"ph"},
       React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}},
