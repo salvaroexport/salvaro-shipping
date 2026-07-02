@@ -707,7 +707,7 @@ function PgCad({cadData,refreshCad,notify}){const[tab,setTab]=useState("clientes
 React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12,padding:"8px 10px",background:"var(--bg3)",borderRadius:8}},
   React.createElement("div",{className:"field",style:{marginBottom:0}},
     React.createElement("label",null,"Custo Fatura BRL"),
-    React.createElement("input",{type:"number",value:b.custo_fatura_brl||"",onChange:async e=>{
+    React.createElement("input",{type:"number",key:"custo-"+b.id,defaultValue:b.custo_fatura_brl||"",onBlur:async e=>{
       const v=e.target.value;
       await db.from("pellets_bookings").update({custo_fatura_brl:v?parseFloat(v):null}).eq("id",b.id);
       await load();
@@ -716,7 +716,7 @@ React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1f
   React.createElement("div",{className:"field",style:{marginBottom:0}},
     React.createElement("label",null,"PTAX EUR ",React.createElement("span",{style:{fontSize:10,color:"var(--text3)"}},"(auto na 1ª NF)")),
     React.createElement("div",{style:{display:"flex",gap:4,alignItems:"center"}},
-      React.createElement("input",{type:"number",step:"0.0001",value:b.taxa_cambio_eur||"",onChange:async e=>{
+      React.createElement("input",{type:"number",step:"0.0001",key:"ptax-"+b.id,defaultValue:b.taxa_cambio_eur||"",onBlur:async e=>{
         const v=e.target.value;
         await db.from("pellets_bookings").update({taxa_cambio_eur:v?parseFloat(v):null}).eq("id",b.id);
         await load();
