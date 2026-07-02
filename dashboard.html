@@ -265,6 +265,8 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
     "Frete Rodoviário":"BRL","Pre-stacking":"BRL","Coleta Antecipada":"BRL",
   };
   const[loading,setLoading]=useState(false);
+  const[ptaxLocal,setPtaxLocal]=useState("");
+  useEffect(()=>{setPtaxLocal(ptax||"");},[ptax,invoiceSel?.invoice]);
   useEffect(()=>{if(busca&&busca.trim()&&!invoiceSel)buscarInvoice();},[]);
   const[saving,setSaving]=useState(false);
   const[addCat,setAddCat]=useState("Frete Marítimo");
@@ -340,7 +342,7 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
     setCustos(prev=>prev.filter(c=>c.id!==id));
     notify("Linha removida");
   }
-  const ptaxNum=parseFloat(ptax)||0;
+  const ptaxNum=Number(String(ptaxLocal).replace(",","."))||0;
   const totalOrcBRL=custos.reduce((s,c)=>{
     const brl=(c.orcado_brl||0)+(c.orcado_usd&&ptaxNum?c.orcado_usd*ptaxNum:0);
     return s+brl;
@@ -402,25 +404,24 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
         React.createElement("div",{style:{fontWeight:600,fontSize:12,color:"var(--text2)"}},"PTAX da Fatura (USD)"),
         React.createElement("input",{
           type:"text",inputMode:"decimal",
-          id:"ptax-input",
-          defaultValue:ptax||"",
-          key:"ptax-"+(invoiceSel?.invoice||0),
+          value:ptaxLocal,
+          onChange:e=>setPtaxLocal(e.target.value),
           onFocus:e=>e.target.select(),
           placeholder:"Ex: 5.7642",
           style:{maxWidth:140,textAlign:"right"}
         }),
         ptax&&React.createElement("span",{style:{fontSize:12,color:"var(--blue)",fontWeight:600}},
-          "Salvo: ",parseFloat(ptax).toFixed(4)
+          "Salvo: ",Number(String(ptax).replace(",",".")).toFixed(4)
         ),
         React.createElement("button",{
           className:"btn bgb bsm",
           disabled:saving,
           onClick:async()=>{
             setSaving(true);
-            const toNum=s=>(s===""||s==null||isNaN(Number(s)))?null:Number(s);
-            const valPtax=document.getElementById("ptax-input")?.value||"";
-            const ptaxNum=toNum(valPtax);
-            const{error:ePtax}=await db.from("custos_ptax").upsert({invoice:invoiceSel.invoice,ptax:ptaxNum},{onConflict:"invoice",ignoreDuplicates:false});
+            const toNum=s=>{if(s===""||s==null)return null;const n=Number(String(s).replace(",","."));return isNaN(n)?null:n;};
+            const valPtax=ptaxLocal;
+            const ptaxNumSave=toNum(String(valPtax).replace(",","."));
+            const{error:ePtax}=await db.from("custos_ptax").upsert({invoice:invoiceSel.invoice,ptax:ptaxNumSave},{onConflict:"invoice",ignoreDuplicates:false});
             if(ePtax){notify("Erro ao salvar PTAX: "+ePtax.message,"err");setSaving(false);return;}
             const updates=Object.entries(linhasEdit);
             for(const[id,fields] of updates){
@@ -430,6 +431,7 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
             }
             setLinhasEdit({});
             setPtax(valPtax);
+            setPtaxLocal(valPtax);
             setSaving(false);
             notify("Fatura salva com sucesso! ✓");
           }
