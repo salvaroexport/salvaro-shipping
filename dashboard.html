@@ -265,6 +265,8 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
     "Frete Rodoviário":"BRL","Pre-stacking":"BRL","Coleta Antecipada":"BRL",
   };
   const[loading,setLoading]=useState(false);
+  const ptaxOrcRef=useRef(null);
+  const ptaxRealRef=useRef(null);
   useEffect(()=>{if(busca&&busca.trim()&&!invoiceSel)buscarInvoice();},[]);
   const[saving,setSaving]=useState(false);
   const[addCat,setAddCat]=useState("Frete Marítimo");
@@ -407,17 +409,21 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
           React.createElement("div",{style:{fontWeight:600,fontSize:12,color:"var(--text2)",minWidth:120,paddingBottom:6}},"PTAX da Fatura"),
           React.createElement("div",{className:"field",style:{marginBottom:0,flex:1,maxWidth:200}},
             React.createElement("label",null,"Orçado (USD)"),
-            React.createElement("input",{type:"text",inputMode:"decimal",value:ptax.ptax_orcado||"",
-              onChange:e=>setPtax(p=>({ptax_orcado:e.target.value,ptax_realizado:p.ptax_realizado||""})),
+            React.createElement("input",{type:"text",inputMode:"decimal",
+              ref:ptaxOrcRef,
+              defaultValue:ptax.ptax_orcado||"",
+              key:"orc-"+(invoiceSel?.invoice||0),
               onFocus:e=>e.target.select(),
-              placeholder:"ex: 5.8500"})
+              placeholder:"Digite o PTAX orçado"})
           ),
           React.createElement("div",{className:"field",style:{marginBottom:0,flex:1,maxWidth:200}},
             React.createElement("label",null,"Realizado (USD)"),
-            React.createElement("input",{type:"text",inputMode:"decimal",value:ptax.ptax_realizado||"",
-              onChange:e=>setPtax(p=>({ptax_orcado:p.ptax_orcado||"",ptax_realizado:e.target.value})),
+            React.createElement("input",{type:"text",inputMode:"decimal",
+              ref:ptaxRealRef,
+              defaultValue:ptax.ptax_realizado||"",
+              key:"real-"+(invoiceSel?.invoice||0),
               onFocus:e=>e.target.select(),
-              placeholder:"ex: 5.8500"})
+              placeholder:"Digite o PTAX realizado"})
           ),
           ptax.ptax_orcado&&ptax.ptax_realizado&&React.createElement("div",{style:{fontSize:12,color:"var(--text2)",paddingBottom:6}},
             "Variação: ",React.createElement("strong",{style:{color:parseFloat(ptax.ptax_realizado)>parseFloat(ptax.ptax_orcado)?"#DC2626":"#059669"}},
@@ -431,11 +437,13 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
           onClick:async()=>{
             setSaving(true);
             /* Salvar PTAX — usar valores do estado diretamente */
-            const toNum=s=>(s===""||s==null)?null:Number(s);
+            const toNum=s=>(s===""||s==null||isNaN(Number(s)))?null:Number(s);
+            const valOrc=ptaxOrcRef.current?ptaxOrcRef.current.value:ptax.ptax_orcado||"";
+            const valReal=ptaxRealRef.current?ptaxRealRef.current.value:ptax.ptax_realizado||"";
             const payload={
               invoice:invoiceSel.invoice,
-              ptax_orcado:toNum(ptax.ptax_orcado),
-              ptax_realizado:toNum(ptax.ptax_realizado)
+              ptax_orcado:toNum(valOrc),
+              ptax_realizado:toNum(valReal)
             };
             console.log("Salvando PTAX payload:",JSON.stringify(payload));
             const{error:ePtax}=await db.from("custos_ptax").upsert(payload,{onConflict:"invoice",ignoreDuplicates:false});
@@ -449,6 +457,8 @@ const freteBRLPrev=filPrev.reduce((s,r)=>s+(r.custo_fatura_brl||0),0);const YoY=
               }
             }
             setLinhasEdit({});
+            /* Atualizar estado ptax com os valores efetivamente salvos */
+            setPtax({ptax_orcado:valOrc,ptax_realizado:valReal});
             setSaving(false);
             notify("Fatura salva com sucesso! ✓");
           }
