@@ -568,6 +568,7 @@ function PgCad({cadData,refreshCad,notify}){const[tab,setTab]=useState("clientes
   const[custos,setCustos]=useState([]);
   const[ptaxMap,setPtaxMap]=useState({});
   const[ano,setAno]=useState("TODOS");
+  const[mes,setMes]=useState("TODOS");
   useEffect(()=>{
     (async()=>{
       setLoading(true);
@@ -619,14 +620,37 @@ function PgCad({cadData,refreshCad,notify}){const[tab,setTab]=useState("clientes
     Object.values(invoiceInfo).forEach(r=>{const y=r.mes_ref?.split(" ")[1];if(y)s.add(y);});
     return["TODOS",...[...s].sort().reverse()];
   },[invoiceInfo]);
-  const filtered=useMemo(()=>ano==="TODOS"?enriched:enriched.filter(c=>c.mes_ref?.includes(ano)),[enriched,ano]);
+  const meses=useMemo(()=>{
+    const s=new Set();
+    Object.values(invoiceInfo).forEach(r=>{
+      if(!r.mes_ref)return;
+      const p=r.mes_ref.trim().split(" ");
+      if(ano!=="TODOS"&&p[1]!==ano)return;
+      s.add(p[0]);
+    });
+    const ordenados=MESES.filter(m=>s.has(m));
+    return["TODOS",...ordenados];
+  },[invoiceInfo,ano]);
+  useEffect(()=>{setMes("TODOS");},[ano]);
+  const filtered=useMemo(()=>{
+    let r=enriched;
+    if(ano!=="TODOS")r=r.filter(c=>c.mes_ref?.includes(ano));
+    if(mes!=="TODOS")r=r.filter(c=>c.mes_ref?.split(" ")[0]===mes);
+    return r;
+  },[enriched,ano,mes]);
   const comValor=useMemo(()=>filtered.filter(c=>c.realTotalUSD>0.009),[filtered]);
   const cobertura=useMemo(()=>{
     const invoicesNoPeriodo=new Set();
-    Object.values(invoiceInfo).forEach(r=>{if(ano==="TODOS"||r.mes_ref?.includes(ano))invoicesNoPeriodo.add(r.invoice);});
+    Object.values(invoiceInfo).forEach(r=>{
+      if(!r.mes_ref)return;
+      const p=r.mes_ref.trim().split(" ");
+      if(ano!=="TODOS"&&p[1]!==ano)return;
+      if(mes!=="TODOS"&&p[0]!==mes)return;
+      invoicesNoPeriodo.add(r.invoice);
+    });
     const invoicesComCusto=new Set(comValor.map(c=>c.invoice));
     return{total:invoicesNoPeriodo.size,comCusto:invoicesComCusto.size};
-  },[invoiceInfo,ano,comValor]);
+  },[invoiceInfo,ano,mes,comValor]);
   const porAgente=useMemo(()=>{
     const m={};
     comValor.forEach(c=>{
@@ -722,6 +746,7 @@ function PgCad({cadData,refreshCad,notify}){const[tab,setTab]=useState("clientes
   return React.createElement(React.Fragment,null,
     React.createElement("div",{style:{display:"flex",gap:10,marginBottom:16,alignItems:"center",flexWrap:"wrap"}},
       React.createElement("select",{className:"sel",value:ano,onChange:e=>setAno(e.target.value)},anos.map(a=>React.createElement("option",{key:a,value:a},a==="TODOS"?"Todos os anos":a))),
+      React.createElement("select",{className:"sel",value:mes,onChange:e=>setMes(e.target.value)},meses.map(m=>React.createElement("option",{key:m,value:m},m==="TODOS"?"Todos os meses":m.charAt(0)+m.slice(1).toLowerCase()))),
       React.createElement("span",{style:{fontSize:12,color:"var(--text2)"}},cobertura.comCusto," de ",cobertura.total," invoices com custo lançado (",cobertura.total?((cobertura.comCusto/cobertura.total)*100).toFixed(0):0,"%)")
     ),
     React.createElement("div",{className:"card mb20"},
