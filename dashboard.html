@@ -637,18 +637,6 @@ function PgCad({cadData,refreshCad,notify}){const[tab,setTab]=useState("clientes
     return Object.values(m).map(a=>({agente:a.agente,total:a.total,cnt:a.invSet.size,media:a.invSet.size?a.total/a.invSet.size:0})).sort((a,b)=>b.total-a.total);
   },[comValor]);
   const totalGeral=porAgente.reduce((s,a)=>s+a.total,0);
-  const subcatList=useMemo(()=>{
-    const s=new Set();comValor.forEach(c=>s.add(c.subcategoria));return[...s].sort();
-  },[comValor]);
-  const[subcatSel,setSubcatSel]=useState("");
-  useEffect(()=>{if(!subcatSel&&subcatList.length)setSubcatSel(subcatList[0]);},[subcatList]);
-  const subcatComparativo=useMemo(()=>{
-    if(!subcatSel)return[];
-    const rows=comValor.filter(c=>c.subcategoria===subcatSel);
-    const m={};
-    rows.forEach(c=>{if(!m[c.agente])m[c.agente]={agente:c.agente,sum:0,cnt:0};m[c.agente].sum+=c.realTotalUSD;m[c.agente].cnt++;});
-    return Object.values(m).map(a=>({agente:a.agente,media:a.sum/a.cnt,cnt:a.cnt})).sort((a,b)=>b.media-a.media);
-  },[comValor,subcatSel]);
   const atipicas=useMemo(()=>{
     const invByAgente={};
     comValor.forEach(c=>{if(!invByAgente[c.agente])invByAgente[c.agente]=new Set();invByAgente[c.agente].add(c.invoice);});
@@ -669,17 +657,48 @@ function PgCad({cadData,refreshCad,notify}){const[tab,setTab]=useState("clientes
         }
       });
     });
-    return result.sort((a,b)=>b.freqAgente-a.freqAgente);
+    return result;
   },[comValor]);
-  const freteRotas=useMemo(()=>{
+  const atipicasSet=useMemo(()=>new Set(atipicas.map(a=>a.agente+"|"+a.subcategoria)),[atipicas]);
+  const heatmap=useMemo(()=>{
+    const bySubcat={};
+    comValor.forEach(c=>{
+      if(!bySubcat[c.subcategoria])bySubcat[c.subcategoria]={categoria:c.categoria,byAgente:{}};
+      if(!bySubcat[c.subcategoria].byAgente[c.agente])bySubcat[c.subcategoria].byAgente[c.agente]={sum:0,cnt:0};
+      bySubcat[c.subcategoria].byAgente[c.agente].sum+=c.realTotalUSD;
+      bySubcat[c.subcategoria].byAgente[c.agente].cnt++;
+    });
+    const agentesSet=new Set();
+    Object.values(bySubcat).forEach(s=>Object.keys(s.byAgente).forEach(a=>agentesSet.add(a)));
+    const agentesCols=[...agentesSet].sort();
+    const rows=Object.entries(bySubcat).map(([subcat,d])=>{
+      const cells=agentesCols.map(ag=>{
+        const c=d.byAgente[ag];
+        return c?{agente:ag,media:c.sum/c.cnt,cnt:c.cnt}:null;
+      });
+      const vals=cells.filter(Boolean).map(c=>c.media);
+      const min=vals.length?Math.min(...vals):0;
+      const max=vals.length?Math.max(...vals):0;
+      return{subcategoria:subcat,categoria:d.categoria,cells,min,max,nAgentes:vals.length};
+    }).sort((a,b)=>a.categoria.localeCompare(b.categoria)||a.subcategoria.localeCompare(b.subcategoria));
+    return{agentesCols,rows};
+  },[comValor]);
+  function heatBg(t){const r=Math.round(220+(254-220)*t),g=Math.round(252+(226-252)*t),b=Math.round(231+(226-231)*t);return`rgb(${r},${g},${b})`;}
+  function heatFg(t){const r=Math.round(5+(220-5)*t),g=Math.round(150+(38-150)*t),b=Math.round(105+(38-105)*t);return`rgb(${r},${g},${b})`;}
+  const freteByDestino=useMemo(()=>{
     const rows=comValor.filter(c=>c.categoria==="Frete Marítimo"&&c.subcategoria==="Frete Marítimo");
     const m={};
     rows.forEach(c=>{
-      const key=c.agente+"|"+c.destino;
-      if(!m[key])m[key]={agente:c.agente,destino:c.destino,sum:0,cnt:0};
-      m[key].sum+=c.realTotalUSD;m[key].cnt++;
+      if(!m[c.destino])m[c.destino]={};
+      if(!m[c.destino][c.agente])m[c.destino][c.agente]={sum:0,cnt:0};
+      m[c.destino][c.agente].sum+=c.realTotalUSD;
+      m[c.destino][c.agente].cnt++;
     });
-    return Object.values(m).map(r=>({...r,media:r.sum/r.cnt})).sort((a,b)=>b.cnt-a.cnt);
+    return Object.entries(m).map(([destino,byAg])=>{
+      const agentes=Object.entries(byAg).map(([agente,d])=>({agente,media:d.sum/d.cnt,cnt:d.cnt})).sort((a,b)=>a.media-b.media);
+      const totalCnt=agentes.reduce((s,a)=>s+a.cnt,0);
+      return{destino,agentes,totalCnt};
+    }).sort((a,b)=>b.totalCnt-a.totalCnt);
   },[comValor]);
   const orcVsReal=useMemo(()=>{
     const m={};
@@ -726,41 +745,54 @@ function PgCad({cadData,refreshCad,notify}){const[tab,setTab]=useState("clientes
       ))
     ),
     React.createElement("div",{className:"card mb20"},
-      React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:12}},
-        React.createElement("div",{className:"ct",style:{marginBottom:0}},"Comparativo de Taxas por Agente"),
-        React.createElement("select",{className:"sel",value:subcatSel,onChange:e=>setSubcatSel(e.target.value)},subcatList.map(s=>React.createElement("option",{key:s},s)))
-      ),
-      subcatComparativo.length===0?React.createElement("div",{className:"empty"},"Sem dados para essa taxa"):
-      React.createElement(Bar,{data:subcatComparativo.map(a=>({l:a.agente,v:a.media})),color:"#7C3AED",fmt:v=>fmtUSD(v)}),
-      atipicas.length>0&&React.createElement("div",{style:{marginTop:20,paddingTop:16,borderTop:"1px solid var(--border)"}},
-        React.createElement("div",{style:{fontSize:12,fontWeight:600,color:"var(--text2)",marginBottom:10}},"⚠ Taxas Atípicas — cobradas com frequência bem acima da média"),
-        React.createElement("div",{className:"tw"},React.createElement("table",null,
-          React.createElement("thead",null,React.createElement("tr",null,
-            React.createElement("th",null,"Agente"),React.createElement("th",null,"Taxa"),React.createElement("th",{className:"r"},"Freq. do Agente"),React.createElement("th",{className:"r"},"Freq. Média")
-          )),
-          React.createElement("tbody",null,atipicas.map((a,i)=>React.createElement("tr",{key:i},
-            React.createElement("td",null,React.createElement("strong",null,a.agente)),
-            React.createElement("td",null,a.subcategoria),
-            React.createElement("td",{className:"r",style:{color:"#DC2626",fontWeight:600}},(a.freqAgente*100).toFixed(0)+"%"),
-            React.createElement("td",{className:"r",style:{color:"var(--text3)"}},(a.freqMedia*100).toFixed(0)+"%")
-          )))
-        ))
-      )
+      React.createElement("div",{className:"ct"},"Mapa de Calor — Taxa × Agente (custo médio USD)"),
+      React.createElement("div",{style:{fontSize:11,color:"var(--text2)",marginBottom:12}},"🟢 mais barato na linha · 🔴 mais caro na linha · cinza = sem dados. Compare de uma vez todas as taxas entre os agentes."),
+      heatmap.rows.length===0?React.createElement("div",{className:"empty"},"Sem dados de custo lançados no período"):
+      React.createElement("div",{className:"tw"},React.createElement("table",{style:{fontSize:12}},
+        React.createElement("thead",null,React.createElement("tr",null,
+          React.createElement("th",null,"Taxa"),
+          heatmap.agentesCols.map(ag=>React.createElement("th",{key:ag,className:"r"},ag))
+        )),
+        React.createElement("tbody",null,(()=>{let catAnterior=null;const out=[];heatmap.rows.forEach((row,i)=>{
+          if(row.categoria!==catAnterior){catAnterior=row.categoria;out.push(React.createElement("tr",{key:"cat-"+i},React.createElement("td",{colSpan:heatmap.agentesCols.length+1,style:{background:"var(--bg3)",fontWeight:700,fontSize:10,textTransform:"uppercase",letterSpacing:.5,color:"var(--text2)",padding:"4px 8px"}},row.categoria)));}
+          out.push(React.createElement("tr",{key:row.subcategoria},
+            React.createElement("td",{style:{fontWeight:500}},row.subcategoria),
+            row.cells.map((cell,ci)=>{
+              if(!cell)return React.createElement("td",{key:ci,className:"r",style:{color:"var(--text3)"}},"—");
+              const t=row.max>row.min?(cell.media-row.min)/(row.max-row.min):0.5;
+              const isAtipica=atipicasSet.has(cell.agente+"|"+row.subcategoria);
+              return React.createElement("td",{key:ci,className:"r",style:{background:row.nAgentes>1?heatBg(t):"var(--bg3)",color:row.nAgentes>1?heatFg(t):"var(--text)",fontWeight:600,padding:"5px 8px"}},fmtUSD(cell.media),isAtipica&&React.createElement("span",{title:"Cobrada com frequência bem acima da média",style:{marginLeft:3}},"⚠"));
+            })
+          ));
+        });return out;})())
+      ))
     ),
     React.createElement("div",{className:"card mb20"},
-      React.createElement("div",{className:"ct"},"Frete Marítimo — Agente × Destino"),
-      freteRotas.length===0?React.createElement("div",{className:"empty"},"Sem dados de frete marítimo lançados"):
-      React.createElement("div",{className:"tw"},React.createElement("table",null,
-        React.createElement("thead",null,React.createElement("tr",null,
-          React.createElement("th",null,"Agente"),React.createElement("th",null,"Destino"),React.createElement("th",{className:"r"},"Embarques"),React.createElement("th",{className:"r"},"Frete Médio (USD)")
-        )),
-        React.createElement("tbody",null,freteRotas.map((r,i)=>React.createElement("tr",{key:i},
-          React.createElement("td",null,React.createElement("strong",null,r.agente)),
-          React.createElement("td",null,r.destino),
-          React.createElement("td",{className:"r"},r.cnt),
-          React.createElement("td",{className:"r",style:{fontVariantNumeric:"tabular-nums"}},fmtUSD(r.media))
-        )))
-      ))
+      React.createElement("div",{className:"ct"},"Frete Marítimo — Comparação por Destino"),
+      React.createElement("div",{style:{fontSize:11,color:"var(--text2)",marginBottom:14}},"Agentes comparados lado a lado dentro do mesmo destino — 🟢 mais barato · 🔴 mais caro."),
+      freteByDestino.length===0?React.createElement("div",{className:"empty"},"Sem dados de frete marítimo lançados"):
+      freteByDestino.map((d,di)=>{
+        const maxV=Math.max(...d.agentes.map(a=>a.media),1);
+        const minAgente=d.agentes.length>1?d.agentes[0].agente:null;
+        const maxAgente=d.agentes.length>1?d.agentes[d.agentes.length-1].agente:null;
+        return React.createElement("div",{key:di,style:{marginBottom:18,paddingBottom:14,borderBottom:di<freteByDestino.length-1?"1px solid var(--border)":"none"}},
+          React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},d.destino,React.createElement("span",{style:{fontSize:11,color:"var(--text3)",fontWeight:400,marginLeft:6}},"(",d.totalCnt," embarques)")),
+          d.agentes.map((a,i)=>{
+            const isMin=a.agente===minAgente,isMax=a.agente===maxAgente;
+            const barColor=isMin?"#059669":isMax?"#DC2626":"var(--blue)";
+            const valColor=isMin?"#059669":isMax?"#DC2626":"var(--text)";
+            return React.createElement("div",{key:i,style:{marginBottom:8}},
+              React.createElement("div",{style:{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}},
+                React.createElement("span",{style:{fontWeight:500}},a.agente,isMin&&" 🟢",isMax&&" 🔴"),
+                React.createElement("span",{style:{fontWeight:700,color:valColor}},fmtUSD(a.media),React.createElement("span",{style:{color:"var(--text3)",fontWeight:400,fontSize:10,marginLeft:6}},"(",a.cnt," emb.)"))
+              ),
+              React.createElement("div",{style:{height:6,background:"var(--bg3)",borderRadius:3}},
+                React.createElement("div",{style:{height:6,background:barColor,borderRadius:3,width:(a.media/maxV*100)+"%",transition:"width .4s"}})
+              )
+            );
+          })
+        );
+      })
     ),
     React.createElement("div",{className:"g2 mb20"},
       React.createElement("div",{className:"card"},
